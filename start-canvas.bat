@@ -82,13 +82,19 @@ for %%p in (%CANVAS_PORT% %MODEL_PORT% %MCP_PORT% 18000 18001 3001) do (
 )
 
 :: === THE MODEL ===
+:: -Parallel 1, and this matters. llama.cpp divides the context between
+:: slots, so -Parallel 2 with -Ctx 32768 gives each request only 16384
+:: tokens. An agent front end sends a system prompt plus tool definitions
+:: that do not fit in that, and the failure is not obvious: the agent sits
+:: on "Thinking" while the server log repeats "context window exceeded,
+:: triggering condensation" forever. One user, one slot, whole context.
 :: The coder launcher, because it passes --jinja. Without that llama.cpp does
 :: not emit tool calls and the agent talks instead of acting.
 ::
 :: No -BindHost here on purpose: its default is 127.0.0.1 and nothing in this
 :: path runs in a container, so the model stays unreachable from the network.
 echo [1/3] Starting the coding model on :%MODEL_PORT% ...
-powershell -ExecutionPolicy Bypass -File "%PROJECT%\start-llama-coder.ps1" -Parallel 2 2>&1 || echo [WARNING] the model starter reported a problem, continuing...
+powershell -ExecutionPolicy Bypass -File "%PROJECT%\start-llama-coder.ps1" -Parallel 1 2>&1 || echo [WARNING] the model starter reported a problem, continuing...
 
 set /a _wait=0
 :wait_model

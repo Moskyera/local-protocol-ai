@@ -343,3 +343,34 @@ class TestPowerShellFilesAreReadableByWindowsPowerShell:
         out = subprocess.run([exe, "-NoProfile", "-Command", script],
                              capture_output=True, text=True, timeout=180)
         assert out.stdout.strip() == "", out.stdout.strip()
+
+
+class TestTheAgentLauncherGivesTheModelEnoughContext:
+    """llama.cpp DIVIDES the context between slots. -Parallel 2 with -Ctx 32768
+    gives each request 16384 tokens, which an agent front end's system prompt
+    plus tool definitions does not fit into.
+
+    The failure is silent in the worst way: the interface sits on "Thinking"
+    while the server log repeats "context window exceeded, triggering
+    condensation" forever. It cost a real debugging session to find.
+    """
+
+    def test_the_canvas_launcher_uses_a_single_slot(self):
+        bat = read("start-canvas.bat")
+        m = re.search(r"start-llama-coder\.ps1\"?\s+-Parallel\s+(\d+)", bat)
+        assert m, "the model is not started with an explicit -Parallel"
+        assert m.group(1) == "1", (
+            f"-Parallel {m.group(1)} splits the context {m.group(1)} ways; "
+            "one user needs one slot")
+
+    def test_the_reason_is_written_down(self):
+        """Someone raising this later needs to know what it breaks."""
+        lines = read("start-canvas.bat").splitlines()
+        # The flag appears in its own explanatory comment, so find the line
+        # that RUNS it — the same trap this file's -BindHost guard fell into.
+        used = [n for n, l in enumerate(lines)
+                if "-Parallel 1" in l and not l.strip().startswith("::")]
+        assert len(used) == 1, f"expected one model start, found {len(used)}"
+        above = "\n".join(lines[max(0, used[0] - 20):used[0]]).lower()
+        assert "context" in above and "slot" in above, (
+            "the -Parallel choice has no explanation above it")
