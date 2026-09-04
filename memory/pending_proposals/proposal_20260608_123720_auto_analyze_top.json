@@ -1,0 +1,25 @@
+{
+  "proposal": {
+    "type": "improvement",
+    "target_area": "langgraph_orchestrator.py - auto analyze top from scan",
+    "target_file": "openhands_skills/langgraph_orchestrator.py",
+    "suggestion": "In the scan branch, auto analyze top 1-2 candidates and include top_analyzed in result.",
+    "edit_spec": "After candidates, add for cand in candidates[:2]: analyzed... ; include in return.",
+    "apply_data": {
+      "file": "openhands_skills/langgraph_orchestrator.py",
+      "operation": "add_auto_analyze_top_scan",
+      "old_string_hint": "candidates = sorted... return { blockchain_result: {type: ecosystem_scan, large_movements: scan, candidate_addresses: candidates, note: ...}}",
+      "new_string_hint": "candidates = ... ; top_analyzed = [] ; for cand in candidates[:2]: ... append analyze(cand) ; return { ..., top_analyzed_candidates: top_analyzed, ... }",
+      "must_preserve_exactly": "USD, FORBIDDEN, human, eval, 100pct"
+    },
+    "source": "Engineering",
+    "priority": "high",
+    "rationale": "Auto starts analysis on top from the no-address whale scan."
+  },
+  "originating_task": "guarded for auto analyze top scan",
+  "status": "pending",
+  "created_at": "2026-06-08T12:37:20.682549",
+  "human_approved": true,
+  "user_approval_text": "I approve the guarded proposal to add auto-analyze of top candidates from the scan because it lets the supervisor immediately start analysis on the addresses returned by no-address whale queries while preserving all rules.",
+  "approved_at": "2026-06-08T12:37:24.407282"
+}

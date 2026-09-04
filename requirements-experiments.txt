@@ -1,0 +1,11 @@
+# Optional / experimental (voice, web UIs, heavy extras)
+# These are in experiments/ and not required for main boot or agentic platform.
+# pip install -r requirements-experiments.txt
+faster-whisper
+piper-tts
+sounddevice
+webrtcvad
+numpy
+gradio
+pipecat-ai
+# Add other voice or one-off experiment deps here.

@@ -1,0 +1,47 @@
+{
+  "id": "proposal_test_100pct_fidelity_001",
+  "timestamp": "2026-06-06T12:00:00",
+  "originating_task": "test integrate langgraph 100pct fidelity from research",
+  "proposal": {
+    "type": "improvement",
+    "target_area": "User-selected research candidate (full fidelity) \u2192 openhands_skills/langgraph_orchestrator.py",
+    "target_file": "openhands_skills/langgraph_orchestrator.py",
+    "suggestion": "Adopt pattern from https://github.com/langchain-ai/langgraph as per user explicit OK on the proactive idea.",
+    "edit_spec": "Add a small, well-scoped, well-commented block or helper that makes the 'human gate before any apply' and 'use objective score from evaluation_harness to decide winners' more explicit, modeled on the LangGraph interrupt + the real-user 'propose-edit-experiment-score-commit-only-winners' loop. Quote the X post IDs/URLs and GitHub url + key phrases from direct_evidence in the proposal + in code comments.",
+    "search_replace_hint": "Look near the proactive discovery emission, the details resolution block, the guarded_propose call site, or any place that builds proposals from research actionable. Also around human_approved handling.",
+    "source": "proactive_discovery + user explicit integration approval (selected_proactive_idea)",
+    "priority": "high",
+    "rationale": "User-approved proactive idea from Research (100% traceable). Source: https://github.com/langchain-ai/langgraph. Direct evidence (verbatim): Public canonical repo. Core pattern: StateGraph + nodes (supervisor, specialists) + conditional routing + interrupts (human approval gate before state/actions change) + checkpointer (MemorySaver). ... Credibility signals include official LangChain posts and real user discussions on propose-edit-experiment-score-only-winners loops.",
+    "apply_data": {
+      "file": "openhands_skills/langgraph_orchestrator.py",
+      "operation": "align_with_langgraph_hil_and_rsi_winner_only_pattern",
+      "description": "Add a small, well-scoped, well-commented block or helper that makes the 'human gate before any apply' and 'use objective score from evaluation_harness to decide winners' more explicit...",
+      "old_string_hint": "Look near the proactive discovery emission, the details resolution block...",
+      "new_string_hint": "Add a small, well-scoped, well-commented block or helper... Quote the X post IDs/URLs and GitHub url + key phrases from direct_evidence...",
+      "research_source_url": "https://github.com/langchain-ai/langgraph",
+      "direct_evidence_quote": "Public canonical repo. Core pattern: StateGraph + nodes (supervisor, specialists) + conditional routing + interrupts (human approval gate before state/actions change) + checkpointer (MemorySaver). ...",
+      "x_evidence": [
+        {"post_url": "https://x.com/LangChain/status/1810716040579408319", "quote": "Human-in-the-loop (HIL) is one of the most requested agent features. This can be done easily w/ LangGraph breakpoints..."},
+        {"post_url": "https://x.com/grok/status/2061927349898166471", "quote": "the graph pauses *before* executing sensitive steps..."},
+        {"post_url": "https://x.com/itsmechase/status/2030493245801943072", "quote": "1. AI agent ... Proposes targeted code edits 2. Runs a fast, reproducible experiment..."}
+      ],
+      "must_preserve": "FORBIDDEN_PATHS (never touch telegram/briefings), exact user economic rules (USD thresholds...), all public fallbacks..., full human_approved + .approved file + pre/post tests + rollback..., the 100% fidelity requirement..."
+    },
+    "research_candidate_id": "seed:langgraph-official",
+    "full_selected_idea_attached": true
+  },
+  "status": "PENDING_HUMAN_APPROVAL",
+  "guard_validation": {"allowed": true, "reason": "validated in test"},
+  "human_action_required": [
+    "1. Review this file carefully (all 100% evidence is here).",
+    "2. git checkout -b evolution/test-100pct-langgraph-align",
+    "3. Review the apply_data hints + the x_evidence and direct_evidence.",
+    "4. Implement the small alignment (add explicit human-gate comments / helper referencing the research).",
+    "5. Run tests / supervisor examples.",
+    "6. Create the .approved file and set human_approved: true.",
+    "7. Call apply_proposal with dry_run first, then real."
+  ],
+  "forbidden_note": "Any edit touching FORBIDDEN_PATHS is an immediate policy violation. This proposal only touches openhands_skills/langgraph_orchestrator.py.",
+  "human_approved": false,
+  "extra_approval_file_expected": "proposal_test_100pct_fidelity_001.approved"
+}

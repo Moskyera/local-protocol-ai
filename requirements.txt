@@ -1,0 +1,33 @@
+# Thin meta file after 2026-06 reorganization.
+# Prefer the split files for clarity and smaller installs:
+#
+#   Core (market engines, llm_client, dashboard, briefing-safe): requirements-core.txt
+#   Agentic platform (MCP, LangGraph, skills, supervisor, research, evaluation): requirements-agentic.txt
+#   Experiments (voice, web UIs, etc. - in experiments/ folder): requirements-experiments.txt
+#
+# Quick full dev install (recommended for most work on the "rest"):
+#   pip install -r requirements-core.txt -r requirements-agentic.txt
+#
+# The old flat list is kept below for backward compatibility during transition.
+
+# === Legacy flat list (still works) ===
+ccxt==4.3.52
+pandas==2.2.0
+ta==0.11.0
+requests>=2.32.3
+python-dotenv==1.0.0
+loguru==0.7.2
+tavily-python==0.3.4
+streamlit==1.40.2
+streamlit-autorefresh==0.0.5
+matplotlib==3.8.3
+finlight-client
+chromadb
+
+# === Advanced Automation & Agent Orchestration ===
+langgraph
+langchain-core
+langchain-ollama
+openai  # For primary llama.cpp (OpenAI compatible) client on :8080
+
+# See requirements-*.txt for the clean split.

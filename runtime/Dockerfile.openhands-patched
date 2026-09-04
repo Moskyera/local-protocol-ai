@@ -1,0 +1,36 @@
+# Dockerfile.openhands-patched
+# Patched OpenHands controller for LOCAL models (qwen3-coder / gemma via llama.cpp).
+#
+# THE PROBLEM: OpenHands makes the `security_risk` parameter HARDCODED-required in
+# 5 codeact tools (bash / str_replace_editor / llm_based_edit / browser / ipython).
+# Frontier models fill it in; local models served by llama.cpp frequently do not,
+# and the agent then loops forever on
+#   "Missing required parameters for function 'execute_bash': {'security_risk'}"
+# and never runs a single command.
+#
+# THE FIX: drop `security_risk` from each tool's `required` list. It stays in
+# `properties`, so a model that DOES send it keeps working normally.
+#
+# The patch is idempotent and self-verifying: if a future upstream release already
+# makes the parameter optional, the sed simply matches nothing and the RUN still
+# succeeds — the build prints how many files it actually changed.
+#
+# BASE_IMAGE is an ARG so update-openhands.bat can rebuild on top of whatever the
+# newest upstream image is, without editing this file.
+#   NOTE: the project moved from ghcr.io/all-hands-ai/openhands (frozen 2025-10-23)
+#   to ghcr.io/openhands/openhands (actively updated).
+ARG BASE_IMAGE=ghcr.io/openhands/openhands:main
+FROM ${BASE_IMAGE}
+
+RUN set -e; \
+    cd /app/openhands/agenthub/codeact_agent/tools 2>/dev/null || cd /app/openhands/agenthub/codeact_agent || exit 0; \
+    changed=0; \
+    for f in bash.py str_replace_editor.py llm_based_edit.py browser.py ipython.py; do \
+        if [ -f "$f" ] && grep -q "'security_risk'\]" "$f"; then \
+            sed -i "s/, 'security_risk'\]/]/g" "$f"; \
+            changed=$((changed+1)); \
+        fi; \
+    done; \
+    echo "[patch] security_risk made optional in $changed tool file(s)"; \
+    echo "[patch] remaining required-lists:"; \
+    grep -h "'required':" bash.py ipython.py 2>/dev/null || true

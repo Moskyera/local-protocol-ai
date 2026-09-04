@@ -1,0 +1,129 @@
+# MOSKY AI Workstation - .gitignore
+# Protects from committing huge files, caches, secrets, and build artifacts.
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments (recreate from requirements)
+ai-env/
+openbb-env/
+venv/
+ENV/
+env/
+.venv/
+
+# Large LLM / binary files (15GB+ model and llama builds)
+*.gguf
+*.bin
+llama/
+llama-backup-*/
+*.dll
+*.exe   # except small scripts if needed, but better to ignore heavy ones
+
+# Logs and temporary output
+logs/*.log
+*.log
+big_test_output.txt
+*.tmp
+*.temp
+
+# Caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+__pycache__/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / local config — MUST stay ignored.
+# Listing which credentials the file holds only tells a reader what to look
+# for. .env.example documents the key NAMES; this file just keeps them out.
+.env
+.env.*
+!.env.example
+*.key
+secrets/
+
+# Docker / build
+my-openhands-runtime
+
+# Experiments that may contain large or private data
+# experiments/   # keep commented so you can version some experiments if wanted
+
+# Memory / vector DB can be large
+memory/openhands/vector_db/
+*.sqlite3
+*.bin
+
+# Windows specific
+*.lnk
+
+# Backup archives
+backups/
+*.zip
+*.7z
+*.tar.gz
+
+# Keep the current working state clean
+# If you want to commit experiments selectively, add them explicitly later.
+
+# Runtime data / generated artefacts (added 2026-08-12)
+app.db
+*.db
+market_memory.json
+signal_history.json
+memory/openhands/vector_db.json
+generated_models/
+generated_sites/
+
+# ---------------------------------------------------------------------------
+# Agent runtime state (added 2026-09-04, before the first public release)
+#
+# None of this is source. It is what the agents produced while running here,
+# and a `git add .` on a fresh clone would have swept 531 files of it into
+# commit #1. Two of the conversation records hold Fernet-encrypted provider
+# api_key blobs, so this is not merely bloat.
+# ---------------------------------------------------------------------------
+conversations/
+bash_events/
+doc_cache/
+logs/
+*.jsonl
+.update_cache.json
+
+# Scratch output from debugging sessions
+out.txt
+verify_last.txt
+_*.txt
+_*.md
+
+# Output from code-review tooling, not part of the system
+.grok-review/

@@ -1,0 +1,9 @@
+# Agentic self-improving system (MCP, LangGraph, skills, supervisor, evaluation, research)
+# This is what powers the "rest" (the powerful agent platform).
+# Usually installed on top of core:
+#   pip install -r requirements-core.txt -r requirements-agentic.txt
+langgraph
+langchain-core
+langchain-ollama
+# fastmcp (for openhands_mcp sidecar) and pydantic are typically pulled or installed explicitly in Docker/runtime
+# Add any extra agent-only deps here as the system evolves.

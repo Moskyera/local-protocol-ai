@@ -1,0 +1,111 @@
+﻿services:
+  openhands:
+    # ⚠️ DEAD IMAGE — verified 2026-09-04 against the GHCR manifest.
+    #
+    # ghcr.io/all-hands-ai/openhands:main was last built 2025-10-23 and holds
+    # v0.59.0. The All-Hands-AI org was renamed to OpenHands and this namespace
+    # never received another build: 0.60, 0.61 and 0.62 were published only
+    # under ghcr.io/openhands/openhands. Bringing this compose file up gives you
+    # a snapshot that is ten months old.
+    #
+    # It is NOT fixed by bumping the tag. This is a V0 artifact, and V1 replaced
+    # the sandbox model entirely, so the my-openhands-runtime image referenced
+    # below (built from runtime/Dockerfile) would also need rebuilding against
+    # an agent-server base. Read the note at the bottom of this file before
+    # changing the line.
+    #
+    # start-ai.bat does NOT use this file — it runs the image directly.
+    image: ghcr.io/all-hands-ai/openhands:main
+    container_name: openhands
+    ports:
+      # Loopback ONLY. This UI has no authentication of any kind and, via the
+      # docker.sock mount below, can run containers as root on the host. A bare
+      # "3000:3000" publishes that to every machine on the network you are
+      # joined to — which on a cafe or hotel network is everyone.
+      - "127.0.0.1:3000:3000"
+    environment:
+      # === PRIMARY RELIABLE BACKEND ===
+      # llama.cpp (Vulkan on RX 9070 XT) started by start-llama-vulkan.ps1 (canonical)
+      # Model: gemma-4-26b-qat (Unsloth QAT 26B-A4B MoE GGUF from C:\AI\models\)
+      # OpenAI-compatible endpoint: http://host.docker.internal:8080/v1
+      # (Old HIP / start-llama-hip.ps1 paths retired)
+      - LLM_MODEL=openai/gemma-4-26b-qat
+      - OPENAI_BASE_URL=http://host.docker.internal:8080/v1
+      - OPENAI_API_KEY=sk-dummy-local
+      # No legacy Ollama (removed - voice not used)
+      - SANDBOX_LOCAL_RUNTIME_URL=http://host.docker.internal
+      - USE_HOST_NETWORK=false
+      # Custom runtime image for preloaded skills (build with: docker build -t my-openhands-runtime -f runtime/Dockerfile .)
+      - AGENT_SERVER_IMAGE_REPOSITORY=my-openhands-runtime
+      - AGENT_SERVER_IMAGE_TAG=latest
+      - SANDBOX_VOLUMES=/workspace:/workspace
+    volumes:
+      # WARNING, read before you keep this line.
+      #
+      # Mounting the Docker socket gives everything inside this container
+      # root-equivalent control of your machine. A container it starts can
+      # mount your whole filesystem. The agent needs it only to spawn its own
+      # sandbox containers — if you are not using sandboxed execution, delete
+      # this line and the stack still works.
+      - //var/run/docker.sock:/var/run/docker.sock
+      # Paths follow the machine, not this machine. ${USERPROFILE} is your own
+      # home directory and "." is wherever you cloned the repository.
+      - ${USERPROFILE}/.openhands:/.openhands
+      - .:/workspace
+    restart: unless-stopped
+
+  # MCP Skills sidecar - native tools (analyze_wallet with real USD risk/PnL, execute_v2_task, get_market_context)
+  # exposed via FastMCP streamable-http for lower latency. Bypasses LLM hallucinations on params.
+  mcp-skills:
+    image: my-openhands-runtime:latest
+    container_name: mcp-skills
+    command: python -m openhands_mcp.server --transport streamable-http --host 0.0.0.0 --port 8765
+    environment:
+      - PYTHONPATH=/workspace
+    env_file:
+      - .env
+    volumes:
+      - .:/workspace
+    ports:
+      # Loopback only, for the same reason as the UI above. The --host 0.0.0.0
+      # in the command is INSIDE the container and has to stay: a process bound
+      # to the container's own loopback cannot be reached through a published
+      # port at all. The bind that decides who can connect is this one.
+      #
+      # These tools write files, read paths, and open pull requests, and there
+      # is no authentication in front of them.
+      - "127.0.0.1:8765:8765"
+    restart: unless-stopped
+    depends_on:
+      - openhands
+
+# ---------------------------------------------------------------------------
+# STATE OF THE UPSTREAM PROJECT — checked 2026-09-04 against the GitHub API
+# and the GHCR manifests, not from memory.
+#
+#   ghcr.io/all-hands-ai/openhands:main   last built 2025-10-23  (v0.59.0)
+#   ghcr.io/openhands/openhands:main      last built 2026-07-24  (what
+#                                          start-ai.bat runs — also frozen)
+#   ghcr.io/openhands/agent-canvas:main   rebuilt continuously, 1.16.0 today
+#
+# On 2026-07-27 the Python OpenHands monorepo was moved to OpenHands/legacy and
+# ARCHIVED (github.com/OpenHands/legacy: archived=true, "Legacy code for
+# OpenHands that used to live in OpenHands/OpenHands"). OpenHands/OpenHands is
+# now a TypeScript repository. So the Dockerised Python GUI this project uses
+# is not behind on releases — it is discontinued.
+#
+# The newest release, v1.16.0 (2026-08-27), belongs to Agent Canvas, a
+# different product. `ghcr.io/openhands/openhands:1.16` does not exist and a
+# tag bump will fail to pull.
+#
+# What still works and needs no change:
+#   - the local llama.cpp wiring: openai/<model> against
+#     http://host.docker.internal:8080/v1 with any API key value
+#   - the MCP sidecar over streamable-http
+#   - security_risk being opt-in (add_security_risk_prediction defaults False)
+#
+# So there is no urgency, and no upgrade either. The real decision is whether
+# to stay on the frozen July snapshot or migrate to Agent Canvas + agent-server,
+# which is a migration and not a version bump: V1 replaced the sandbox model,
+# so my-openhands-runtime would be rebuilt FROM a pinned agent-server image.
+# ---------------------------------------------------------------------------
