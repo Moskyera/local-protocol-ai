@@ -64,7 +64,24 @@ param(
     [int]$UBatch = 128,
 
     # 0 = compute the largest value that fits. Set a number to override.
-    [int]$Ngl = 0
+    [int]$Ngl = 0,
+
+    # Keep the Mixture-of-Experts weights on the CPU.
+    #
+    # In an MoE model the experts are most of the file, but only a few of
+    # them fire per token. With them on the CPU the GPU holds only attention
+    # and the shared layers, which is small enough that EVERY layer fits and
+    # the KV cache has room to grow. Set -CpuMoe:$false to get the old
+    # behaviour of fitting as many whole layers as the budget allows.
+    #
+    # The trade is generation speed, which depends on your RAM bandwidth.
+    # Measure it with scripts/bench_moe.py before deciding either way.
+    [switch]$CpuMoe = $true,
+
+    # The middle ground. Keep only the first N layers' experts on the CPU and
+    # put the rest on the GPU, trading VRAM back for generation speed. Takes
+    # precedence over -CpuMoe when set. 0 = not used.
+    [int]$NCpuMoe = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -177,13 +194,32 @@ Start-Sleep -Seconds 2
 #   KV-cache-limited. Enabling flash attention (-fa on) collapses KV memory, which
 #   freed enough VRAM to offload ALL 48 layers (-ngl 99) instead of 46.
 #
-#   --n-cpu-moe was tested and is NOT used: sweeping it made things strictly worse
-#   (ncmoe 24 -> 36 t/s, 16 -> 49, 8 -> 68, 0 -> 94). Keep MoE experts on the GPU.
+#   The July note that followed here said --n-cpu-moe "made things strictly worse"
+#   (ncmoe 24 -> 36 t/s, 16 -> 49, 8 -> 68, 0 -> 94) and that spilling ~5 GB of
+#   experts into shared RAM was "FINE". Both were true only relative to -ngl 99
+#   with the card overcommitted - and that overcommit is what bugchecked this
+#   machine four times (0x116). The VRAM budget above ended it, and with it the
+#   94 t/s. The comparison that matters is now against the SAFE baseline.
 #
-#   The 17.7 GB model does not fully fit in 16 GB VRAM (~14 GB VRAM + ~5 GB spills to
-#   shared system RAM). That is FINE here: this is a MoE with only ~3B active params
-#   per token, so the spilled inactive experts are rarely read. Measured: context size
-#   makes no speed difference (64k/32k/24k all ~94 t/s), so we keep the full 64k.
+#   RE-MEASURED 2026-09-05, scripts/bench_moe.py, -c 32768, one slot:
+#
+#     config                       VRAM      prompt     generate
+#     budget-fitted layers (old)  15.43 GB   310 t/s    39.2 t/s   <- at the edge
+#     --cpu-moe   (DEFAULT now)    4.69 GB   361 t/s    22.3 t/s   <- huge margin
+#     --n-cpu-moe 24              12.75 GB   496 t/s    39.5 t/s
+#     --n-cpu-moe 16              15.33 GB   751 t/s    48.0 t/s   <- at the edge
+#
+#   --cpu-moe is the default because it is the only row with real headroom on a
+#   16 GB card, prompt processing is FASTER (every layer's attention is on the
+#   GPU), and it is the configuration an 8 GB card can run at all. The price is
+#   generation speed, which now depends on RAM bandwidth.
+#
+#   -NCpuMoe N is kept as an opt-in, with a warning: the split configurations
+#   drive the GPU and all 16 CPU cores flat out at the same time, the highest
+#   combined power draw this box can produce. The machine hard-reset - no dump,
+#   no bugcheck code - seconds after the -NCpuMoe 24 benchmark completed, with
+#   the desktop being unlocked at that moment. Cause not proven; the correlation
+#   is recorded here so nobody makes it the default unattended.
 #
 #   -fa on         : flash attention — the single biggest win.
 #   --cache-type-* : q8_0 (better quality than the old q4_0, and now affordable).
@@ -244,7 +280,17 @@ if ($Ngl -gt 0) {
     if ($NGL -lt 0) { $NGL = 0 }
 }
 
+if ($CpuMoe -or $NCpuMoe -gt 0) {
+    # The budget above sized whole layers, weights and all. With the experts
+    # kept on the CPU only the attention and shared tensors are offloaded,
+    # a fraction of each layer, so every layer fits and the budget does not
+    # apply. What lands on the GPU is now the KV cache plus that fraction.
+    $NGL = $LAYERS
+    Write-Host ("  -CpuMoe: expert weights stay in system RAM; all {0} layers' attention on the GPU" -f $LAYERS) -ForegroundColor Green
+}
+
 $onGpuGB = $modelGB * ($NGL / $LAYERS)
+if ($CpuMoe) { Write-Host "  -> (the weight estimate below counts whole layers; with -CpuMoe the GPU share is far smaller)" -ForegroundColor DarkGray }
 Write-Host ("  -> offloading $NGL of $LAYERS layers ({0:N2} GB) + {1:N2} GB KV = {2:N2} GB of {3:N2} GB usable" -f $onGpuGB, $kvGB, ($onGpuGB + $kvGB), $usable) -ForegroundColor Green
 if ($NGL -lt $LAYERS) {
     Write-Host ("     ({0} layers run on the CPU. Lower -Ctx to buy back a few.)" -f ($LAYERS - $NGL))
@@ -271,6 +317,8 @@ $args = @(
     "--parallel", $Parallel,
     "--no-warmup"
 )
+if ($NCpuMoe -gt 0) { $args += @("--n-cpu-moe", $NCpuMoe) }
+elseif ($CpuMoe)    { $args += "--cpu-moe" }
 
 $proc = Start-Process -FilePath $SERVER_EXE -ArgumentList $args -WindowStyle Hidden -RedirectStandardOutput $logOut -RedirectStandardError $logErr -PassThru
 Write-Host "llama-server (coder) started (PID $($proc.Id)). Logs: $logOut / $logErr" -ForegroundColor Green

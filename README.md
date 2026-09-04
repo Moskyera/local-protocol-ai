@@ -27,8 +27,14 @@ genuinely worse than the big cloud models at hard reasoning. That is the trade.
 
 ## What you need
 
-**A graphics card with at least 12 GB of video memory.** 16 GB is comfortable.
-This is the one requirement that is not negotiable — the model has to fit.
+**A graphics card with at least 8 GB of video memory, and system RAM to hold
+the model.** By default the coding launcher keeps the model's expert weights in
+system RAM and puts only the attention layers on the card — measured at 4.7 GB
+of video memory on this machine. That is what makes an 8 GB card workable. The
+cost moves to RAM: the coding model is a 16.5 GB file loaded whole, so you want
+at least 24 GB of RAM with nothing heavy running beside it. With 16 GB of video
+memory you can instead put half the experts on the card and roughly double
+generation speed; see "About your graphics card" below.
 
 Everything here was built and measured on **Windows 11 with an AMD RX 9070 XT
 (16 GB), using Vulkan**. That is a real constraint on how much I can promise:
@@ -163,16 +169,36 @@ A 16 GB card holds **one** model at a time. That is why the launcher takes a
 `coder` argument instead of running both: switching models means restarting the
 backend, and there is no way around it at this memory size.
 
-The launcher works out how many layers of the model fit in your card, taking
-into account how much memory the context window itself needs — for the market
-model that is 223 KiB for every token of context, which at a 32,000-token
-window is 7 GB before the model weights are even loaded.
+Both models are Mixture-of-Experts. Most of the file is "experts", of which
+only a few fire for any given token. The coding launcher therefore keeps the
+experts in system RAM by default (`--cpu-moe`) and puts only the attention
+layers on the card. Measured on this machine at a 32,768-token context:
 
-This matters more than it sounds. Asking for more memory than the card has does
-not produce a polite error; on this machine it produced four hard crashes with a
-`VIDEO_TDR_FAILURE` bugcheck. The budget calculation exists because of those
-crashes. If you see it putting layers on the CPU, that is it protecting you —
-lower the context size with `-Ctx` if you want them back on the GPU.
+| Configuration | Video memory | Prompt | Generation |
+|---|---|---|---|
+| Whole layers on the GPU (old default) | 15.4 GB | 310 tok/s | 39 tok/s |
+| **Experts in RAM (`--cpu-moe`, default now)** | **4.7 GB** | **361 tok/s** | **22 tok/s** |
+| Half the experts on the GPU (`-NCpuMoe 24`) | 12.8 GB | 496 tok/s | 40 tok/s |
+
+The default is the slowest at generating text and the only one with real
+headroom on a 16 GB card. It is also the reason an 8 GB card can run this at
+all. Prompt processing is actually faster, because every layer's attention now
+fits on the GPU. If 22 tokens a second is too slow for you and you have the
+video memory, `-NCpuMoe 24` on the coding launcher buys the speed back.
+
+Two warnings, both learned the hard way. Asking for more video memory than the
+card has does not produce a polite error; on this machine it produced four
+hard crashes with a `VIDEO_TDR_FAILURE` bugcheck, and the launcher's budget
+check exists because of them. And the split configurations drive the GPU and
+every CPU core flat out at once — the highest power draw the machine can
+produce. This machine hard-reset, with no crash dump, seconds after a
+benchmark of `-NCpuMoe 24` finished. The cause was not proven. It is recorded
+here so you do not run that configuration unattended and find out.
+
+The market model has much heavier attention — 223 KiB of cache per token of
+context, 7 GB at a 32,000-token window before any weights load — so its
+launcher keeps the old whole-layer behaviour until `--cpu-moe` has been
+measured on it. Pass `-CpuMoe` to try it.
 
 ---
 

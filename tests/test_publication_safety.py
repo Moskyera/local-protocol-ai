@@ -374,3 +374,51 @@ class TestTheAgentLauncherGivesTheModelEnoughContext:
         above = "\n".join(lines[max(0, used[0] - 20):used[0]]).lower()
         assert "context" in above and "slot" in above, (
             "the -Parallel choice has no explanation above it")
+
+
+class TestExpertOffloadDefaultsAreTheMeasuredOnes:
+    """The MoE launchers' defaults were chosen from measurements taken on
+    2026-09-05 (scripts/bench_moe.py), recorded in start-llama-coder.ps1.
+
+    The coding model keeps its experts in system RAM by default: 4.7 GB of
+    video memory instead of 15.4, at the cost of generation speed. The market
+    model does NOT, because that launcher runs the briefings and the setting
+    was never measured on it. These tests keep the defaults where the data put
+    them, so a well-meaning flip in either direction has to bring a number.
+    """
+
+    def _default(self, name, switch):
+        src = read(name)
+        m = re.search(r"\[switch\]\$" + switch + r"\s*=\s*\$(true|false)", src)
+        assert m, f"{name}: no [switch]${switch} default found"
+        return m.group(1)
+
+    def test_the_coding_launcher_keeps_experts_in_ram_by_default(self):
+        assert self._default("start-llama-coder.ps1", "CpuMoe") == "true"
+
+    def test_the_market_launcher_does_not_until_it_is_measured(self):
+        assert self._default("start-llama-vulkan.ps1", "CpuMoe") == "false"
+
+    @pytest.mark.parametrize("name", ["start-llama-coder.ps1", "start-llama-vulkan.ps1"])
+    def test_both_launchers_pass_the_flag_when_asked(self, name):
+        src = read(name)
+        assert "--cpu-moe" in src, "the switch exists but never reaches llama-server"
+        assert "--n-cpu-moe" in src, "the -NCpuMoe middle ground is missing"
+        # the middle ground must take precedence, or -NCpuMoe silently does nothing
+        i_n = src.index('"--n-cpu-moe"')
+        i_all = src.index('"--cpu-moe"')
+        assert i_n < i_all, "-NCpuMoe must be checked before -CpuMoe"
+
+    def test_the_measurements_are_written_next_to_the_default(self):
+        """A default without its numbers is a guess. The table has to live in
+        the launcher, where the next person changing it will actually look."""
+        src = read("start-llama-coder.ps1")
+        for token in ("4.69 GB", "22.3 t/s", "15.43 GB", "39.2 t/s", "bench_moe.py"):
+            assert token in src, f"measurement {token!r} missing from the launcher"
+
+    def test_the_split_configuration_carries_its_warning(self):
+        """The machine hard-reset seconds after a -NCpuMoe 24 benchmark. Not
+        proven to be the cause, but nobody should make it the default without
+        reading that."""
+        src = read("start-llama-coder.ps1")
+        assert "hard-reset" in src and "-NCpuMoe" in src

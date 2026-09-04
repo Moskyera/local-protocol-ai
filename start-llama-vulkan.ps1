@@ -65,7 +65,31 @@ param(
     [int]$UBatch = 128,
 
     # 0 = compute the largest value that actually fits. Set a number to override.
-    [int]$Ngl = 0
+    [int]$Ngl = 0,
+
+    # Keep the Mixture-of-Experts weights on the CPU.
+    #
+    # In an MoE model the experts are most of the file, but only a few of
+    # them fire per token. With them on the CPU the GPU holds only attention
+    # and the shared layers, which is small enough that EVERY layer fits and
+    # the KV cache has room to grow. Set -CpuMoe:$false to get the old
+    # behaviour of fitting as many whole layers as the budget allows.
+    #
+    # The trade is generation speed, which depends on your RAM bandwidth.
+    # Measure it with scripts/bench_moe.py before deciding either way.
+    #
+    # OFF here until it has been measured on THIS model. The Qwen launcher
+    # defaults it on because it was measured there (4.7 GB, 22 tok/s). gemma's
+    # attention is far heavier - head dim 512, 223 KiB of KV per token - so
+    # "only attention on the GPU" is not small the way it is for Qwen, and this
+    # launcher runs the briefings that must not break. Turn it on deliberately,
+    # with a measurement, not by default.
+    [switch]$CpuMoe = $false,
+
+    # The middle ground. Keep only the first N layers' experts on the CPU and
+    # put the rest on the GPU, trading VRAM back for generation speed. Takes
+    # precedence over -CpuMoe when set. 0 = not used.
+    [int]$NCpuMoe = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -336,7 +360,17 @@ if ($Ngl -gt 0) {
     if ($NGL -lt 0) { $NGL = 0 }
 }
 
+if ($CpuMoe -or $NCpuMoe -gt 0) {
+    # The budget above sized whole layers, weights and all. With the experts
+    # kept on the CPU only the attention and shared tensors are offloaded,
+    # a fraction of each layer, so every layer fits and the budget does not
+    # apply. What lands on the GPU is now the KV cache plus that fraction.
+    $NGL = $LAYERS
+    Write-Host ("  -CpuMoe: expert weights stay in system RAM; all {0} layers' attention on the GPU" -f $LAYERS) -ForegroundColor Green
+}
+
 $onGpuGB = $modelGB * ($NGL / $LAYERS)
+if ($CpuMoe) { Write-Host "  -> (the weight estimate below counts whole layers; with -CpuMoe the GPU share is far smaller)" -ForegroundColor DarkGray }
 Write-Host ("  -> offloading $NGL of $LAYERS layers ({0:N2} GB) + {1:N2} GB KV = {2:N2} GB of {3:N2} GB usable" -f $onGpuGB, $kvGB, ($onGpuGB + $kvGB), $usable) -ForegroundColor Green
 if ($NGL -lt $LAYERS) {
     Write-Host ("     ({0} layers run on the CPU. That is the price of not crashing; raise -Ctx down or -VramGB up if you have headroom.)" -f ($LAYERS - $NGL))
@@ -378,8 +412,9 @@ $args = @(
     "--parallel", $Parallel,
 
     "--no-warmup"
-
 )
+if ($NCpuMoe -gt 0) { $args += @("--n-cpu-moe", $NCpuMoe) }
+elseif ($CpuMoe)    { $args += "--cpu-moe" }
 
 
 
