@@ -1,6 +1,6 @@
-# Stop Agent Canvas being reachable from the network.
+﻿# Stop Agent Canvas being reachable from the network.
 #
-# Agent Canvas listens on 0.0.0.0:8000 and has no option to change that — only
+# Agent Canvas listens on 0.0.0.0:8000 and has no option to change that - only
 # --port. Everything else in this project binds to 127.0.0.1, so this is the
 # one hole, and it is a real one: in its default mode the API key is injected
 # into the page automatically, so anyone who can open the address gets full
@@ -11,7 +11,7 @@
 # firewall.
 #
 # Run it by right-clicking and choosing "Run with PowerShell", or from a normal
-# PowerShell window — it will ask for administrator rights itself.
+# PowerShell window - it will ask for administrator rights itself.
 
 $ErrorActionPreference = "Stop"
 $RuleName = "Block Agent Canvas 8000 inbound"
@@ -70,7 +70,7 @@ Write-Host ("    action    : {0}" -f $rule.Action)
 Write-Host ("    profiles  : {0}" -f $rule.Profile)
 Write-Host ("    port      : {0}/{1}" -f $filter.LocalPort, $filter.Protocol)
 Write-Host ""
-Write-Host "  Your own browser still reaches http://localhost:8000 — loopback" -ForegroundColor Gray
+Write-Host "  Your own browser still reaches http://localhost:8000 - loopback" -ForegroundColor Gray
 Write-Host "  traffic does not go through the firewall. Other machines cannot." -ForegroundColor Gray
 Write-Host ""
 Read-Host "Press Enter to close"

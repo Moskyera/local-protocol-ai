@@ -296,3 +296,50 @@ class TestThePowerShellLaunchersAreAlsoPortableAndClosed:
         above = "\n".join(lines[max(0, used[0] - 15):used[0]])
         assert "host.docker.internal" in above, (
             "the wide bind has no explanation in the lines above it")
+
+
+class TestPowerShellFilesAreReadableByWindowsPowerShell:
+    """Windows PowerShell 5.1 reads a BOM-less .ps1 as ANSI, not UTF-8.
+
+    A single em-dash in a comment is then two mojibake bytes, and one of them
+    can terminate a string early. That is exactly how the firewall script
+    shipped broken: it looked fine in every editor and failed to parse on the
+    machine it was written for.
+    """
+
+    def ps1_files(self):
+        return [f for f in tracked() if f.endswith(".ps1")]
+
+    def test_every_powershell_file_is_ascii_or_carries_a_bom(self):
+        offenders = []
+        for f in self.ps1_files():
+            with open(os.path.join(ROOT, f), "rb") as fh:
+                raw = fh.read()
+            has_bom = raw[:3] == b"\xef\xbb\xbf"
+            non_ascii = sum(1 for b in raw[3:] if b > 127)
+            if non_ascii and not has_bom:
+                offenders.append(f"{f} ({non_ascii} non-ascii bytes, no BOM)")
+        assert offenders == [], offenders
+
+    def test_they_all_actually_parse(self):
+        """The real test. Ask PowerShell itself, rather than trusting the
+        encoding rule above to be the only way to break one."""
+        import shutil
+
+        exe = shutil.which("powershell") or shutil.which("pwsh")
+        if not exe:
+            pytest.skip("no PowerShell on this machine")
+
+        script = (
+            "$bad=@(); "
+            "Get-ChildItem -Path '{root}' -Filter *.ps1 -Recurse -File | ForEach-Object {{ "
+            "  $e=$null; "
+            "  $null=[System.Management.Automation.Language.Parser]::ParseFile("
+            "$_.FullName,[ref]$null,[ref]$e); "
+            "  if($e){{ $bad += $_.Name }} }}; "
+            "if($bad){{ Write-Output ($bad -join ',') }}"
+        ).format(root=ROOT.replace("'", "''"))
+
+        out = subprocess.run([exe, "-NoProfile", "-Command", script],
+                             capture_output=True, text=True, timeout=180)
+        assert out.stdout.strip() == "", out.stdout.strip()

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Creates a timestamped backup of the current working state of the MOSKY project.
     Focuses on source code and configuration (not the 15GB+ model or huge venvs).
