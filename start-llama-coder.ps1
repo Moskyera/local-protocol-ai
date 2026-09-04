@@ -209,6 +209,16 @@ Start-Sleep -Seconds 2
 #     --n-cpu-moe 24              12.75 GB   496 t/s    39.5 t/s
 #     --n-cpu-moe 16              15.33 GB   751 t/s    48.0 t/s   <- at the edge
 #
+#   llama.cpp b10816 (2026-09-04) vs the b9587 this ships with, same --cpu-moe
+#   config, same script, side install at C:\AI\llama-b10816, --no-mmap verified
+#   honoured (18.6 GB private bytes):
+#     b9587                        4.69 GB   361 t/s    22.3 t/s
+#     b10816                       4.73 GB   235 t/s    20.8 t/s   <- slower here
+#   NOT adopted. One measurement, on one card, with 2 GB of the previous
+#   model's VRAM still held at start; a regression signal, not a verdict.
+#   Its log is terse by default (-lv 1 restores the device/kernel lines), so
+#   which Vulkan path changed is unknown. Re-test before trusting either way.
+#
 #   --cpu-moe is the default because it is the only row with real headroom on a
 #   16 GB card, prompt processing is FASTER (every layer's attention is on the
 #   GPU), and it is the configuration an 8 GB card can run at all. The price is
@@ -304,6 +314,16 @@ if ($NGL -lt $LAYERS) {
 }
 Write-Host ""
 
+# Newer llama.cpp (b10816+) deprecates --no-mmap in favour of --load-mode, and
+# older builds (b9587) do not know --load-mode at all. Ask the binary which it
+# is, once, with no model and no GPU, and pass the flag it understands. The
+# README tells people to download a recent release, so both must work.
+$loadFlag = @("--no-mmap")
+try {
+    $help = & $SERVER_EXE --help 2>&1 | Out-String
+    if ($help -match "--load-mode") { $loadFlag = @("--load-mode", "none") }
+} catch {}
+
 $args = @(
     "-m", $MODEL_PATH,
     "--alias", $ALIAS,
@@ -316,7 +336,6 @@ $args = @(
     "-fa", "on",
     "--cache-reuse", "256",
     "-t", "16",
-    "--no-mmap",
     "--jinja",
     "--batch-size", $Batch,
     "--ubatch-size", $UBatch,
@@ -324,6 +343,7 @@ $args = @(
     "--parallel", $Parallel,
     "--no-warmup"
 )
+$args += $loadFlag
 if ($NCpuMoe -gt 0) { $args += @("--n-cpu-moe", $NCpuMoe) }
 elseif ($CpuMoe)    { $args += "--cpu-moe" }
 

@@ -389,6 +389,16 @@ if ($NGL -lt $LAYERS) {
 }
 Write-Host ""
 
+# Newer llama.cpp (b10816+) deprecates --no-mmap in favour of --load-mode, and
+# older builds (b9587) do not know --load-mode at all. Ask the binary which it
+# is, once, with no model and no GPU, and pass the flag it understands. The
+# README tells people to download a recent release, so both must work.
+$loadFlag = @("--no-mmap")
+try {
+    $help = & $SERVER_EXE --help 2>&1 | Out-String
+    if ($help -match "--load-mode") { $loadFlag = @("--load-mode", "none") }
+} catch {}
+
 $args = @(
 
     "-m", $MODEL_PATH,
@@ -412,9 +422,6 @@ $args = @(
     "--cache-reuse", "256",
 
     "-t", "16",
-
-    "--no-mmap",                # Avoid slow paging during first load of the large model.
-
     "--batch-size", $Batch,
 
     "--ubatch-size", $UBatch,
@@ -425,6 +432,7 @@ $args = @(
 
     "--no-warmup"
 )
+$args += $loadFlag
 if ($NCpuMoe -gt 0) { $args += @("--n-cpu-moe", $NCpuMoe) }
 elseif ($CpuMoe)    { $args += "--cpu-moe" }
 

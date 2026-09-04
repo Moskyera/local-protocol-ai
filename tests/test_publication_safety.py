@@ -430,3 +430,38 @@ class TestExpertOffloadDefaultsAreTheMeasuredOnes:
         reading that."""
         src = read("start-llama-coder.ps1")
         assert "hard-reset" in src and "-NCpuMoe" in src
+
+
+class TestTheLoadFlagFollowsTheLlamaBuild:
+    """llama.cpp b10816 deprecated --no-mmap in favour of --load-mode, and
+    b9587 - the build this ships with - does not know --load-mode at all. The
+    README tells people to download a recent release, so a launcher that
+    hardcodes either flag is wrong for half of them. The launcher must ask the
+    binary and pass what it understands.
+    """
+
+    LAUNCHERS = ["start-llama-coder.ps1", "start-llama-vulkan.ps1"]
+
+    @pytest.mark.parametrize("name", LAUNCHERS)
+    def test_no_launcher_hardcodes_the_flag_in_its_argument_list(self, name):
+        src = read(name)
+        assert not re.search(r'^\s*"--no-mmap",', src, re.M), (
+            f"{name} still hardcodes --no-mmap in $args")
+        assert not re.search(r'^\s*"--load-mode",', src, re.M), (
+            f"{name} hardcodes --load-mode, which b9587 rejects")
+
+    @pytest.mark.parametrize("name", LAUNCHERS)
+    def test_the_flag_is_detected_from_the_binary_and_appended(self, name):
+        src = read(name)
+        assert '$loadFlag = @("--no-mmap")' in src, "no fallback for old builds"
+        assert '"--load-mode", "none"' in src, "no --load-mode none for new builds"
+        assert "$args += $loadFlag" in src, "the detected flag never reaches $args"
+        # detection must read the binary's help, not guess from a version string
+        assert "--help" in src.split("$loadFlag")[1].split("$args = @(")[0]
+
+    def test_the_b10816_measurement_sits_next_to_the_verdict(self):
+        """Not adopted, and the number that says why has to be where the next
+        person deciding will look."""
+        src = read("start-llama-coder.ps1")
+        for token in ("b10816", "235 t/s", "NOT adopted", "llama-b10816"):
+            assert token in src, f"{token!r} missing from the coder launcher"

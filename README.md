@@ -100,6 +100,17 @@ Pick the build that matches your card:
 If you would rather keep llama.cpp somewhere else, set `LOCAL_AI_LLAMA_DIR` to
 that folder.
 
+One honest note about "recent". This was built and measured on build b9587
+(June 2026). Build b10816 (September 2026) was installed beside it and
+measured with the same script and settings on the same card, and it was
+slower here: prompt processing 361 → 235 tokens a second, generation
+22.3 → 20.8. One measurement, one card, not a verdict — but it is why the
+launchers do not assume a newer build is a faster one. They do handle both:
+b10816 retired the `--no-mmap` flag in favour of `--load-mode`, and the
+launcher asks the binary which one it understands rather than guessing. If
+you install a newer build and it is faster for you, the benchmark to prove it
+is `python scripts/bench_moe.py`.
+
 ### 4. Download a model
 
 Models go in a folder named `models`, also next to the code — so
