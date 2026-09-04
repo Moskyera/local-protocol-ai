@@ -409,12 +409,20 @@ class TestExpertOffloadDefaultsAreTheMeasuredOnes:
         i_all = src.index('"--cpu-moe"')
         assert i_n < i_all, "-NCpuMoe must be checked before -CpuMoe"
 
-    def test_the_measurements_are_written_next_to_the_default(self):
+    @pytest.mark.parametrize("name,tokens", [
+        ("start-llama-coder.ps1",
+         ("4.69 GB", "22.3 t/s", "15.43 GB", "39.2 t/s", "bench_moe.py")),
+        # gemma: the experts-in-RAM measurement, and the GGUF fact that
+        # explains it - 2.40 GiB of non-expert weights, not "heavy attention"
+        ("start-llama-vulkan.ps1",
+         ("5.54 GB", "22.9 t/s", "2.40 GiB", "13.43 GiB", "bench_moe.py")),
+    ])
+    def test_the_measurements_are_written_next_to_the_default(self, name, tokens):
         """A default without its numbers is a guess. The table has to live in
         the launcher, where the next person changing it will actually look."""
-        src = read("start-llama-coder.ps1")
-        for token in ("4.69 GB", "22.3 t/s", "15.43 GB", "39.2 t/s", "bench_moe.py"):
-            assert token in src, f"measurement {token!r} missing from the launcher"
+        src = read(name)
+        for token in tokens:
+            assert token in src, f"measurement {token!r} missing from {name}"
 
     def test_the_split_configuration_carries_its_warning(self):
         """The machine hard-reset seconds after a -NCpuMoe 24 benchmark. Not

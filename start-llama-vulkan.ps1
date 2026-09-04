@@ -78,12 +78,17 @@ param(
     # The trade is generation speed, which depends on your RAM bandwidth.
     # Measure it with scripts/bench_moe.py before deciding either way.
     #
-    # OFF here until it has been measured on THIS model. The Qwen launcher
-    # defaults it on because it was measured there (4.7 GB, 22 tok/s). gemma's
-    # attention is far heavier - head dim 512, 223 KiB of KV per token - so
-    # "only attention on the GPU" is not small the way it is for Qwen, and this
-    # launcher runs the briefings that must not break. Turn it on deliberately,
-    # with a measurement, not by default.
+    # MEASURED 2026-09-05 on this file, -c 32768, one slot (scripts/bench_moe.py):
+    #   -CpuMoe : 5.54 GB VRAM, prompt 282 t/s, generate 22.9 t/s
+    # Read from the GGUF header: 13.43 GiB of the 15.83 GiB file is experts;
+    # the non-expert weights that go to the GPU are only 2.40 GiB. The heavy
+    # part of gemma on the GPU is not its weights, it is the KV cache - 223 KiB
+    # per token, 6.97 GB at 32k - and that is the same with or without -CpuMoe.
+    #
+    # Still OFF by default, for one reason only: the old whole-layer config has
+    # not been benchmarked on gemma with the same script, so there is no number
+    # to say whether 22.9 t/s is a gain or a loss for the briefings this
+    # launcher exists to produce. Measure that, then decide. Not before.
     [switch]$CpuMoe = $false,
 
     # The middle ground. Keep only the first N layers' experts on the CPU and
@@ -370,8 +375,15 @@ if ($CpuMoe -or $NCpuMoe -gt 0) {
 }
 
 $onGpuGB = $modelGB * ($NGL / $LAYERS)
-if ($CpuMoe) { Write-Host "  -> (the weight estimate below counts whole layers; with -CpuMoe the GPU share is far smaller)" -ForegroundColor DarkGray }
-Write-Host ("  -> offloading $NGL of $LAYERS layers ({0:N2} GB) + {1:N2} GB KV = {2:N2} GB of {3:N2} GB usable" -f $onGpuGB, $kvGB, ($onGpuGB + $kvGB), $usable) -ForegroundColor Green
+if ($CpuMoe -or $NCpuMoe -gt 0) {
+    # The whole-file estimate is wrong here and printing it looked like an
+    # overcommit ("22.81 GB of 14.00 usable") when the card actually held
+    # 5.54 GB. Say what is true: the KV cache is the known part, the weight
+    # share is the non-expert tensors, and the measured total lives up top.
+    Write-Host ("  -> experts in system RAM; GPU holds the non-expert weights + {0:N2} GB KV (measured total in this file's header)" -f $kvGB) -ForegroundColor Green
+} else {
+    Write-Host ("  -> offloading $NGL of $LAYERS layers ({0:N2} GB) + {1:N2} GB KV = {2:N2} GB of {3:N2} GB usable" -f $onGpuGB, $kvGB, ($onGpuGB + $kvGB), $usable) -ForegroundColor Green
+}
 if ($NGL -lt $LAYERS) {
     Write-Host ("     ({0} layers run on the CPU. That is the price of not crashing; raise -Ctx down or -VramGB up if you have headroom.)" -f ($LAYERS - $NGL))
 }

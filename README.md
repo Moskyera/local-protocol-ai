@@ -174,11 +174,12 @@ only a few fire for any given token. The coding launcher therefore keeps the
 experts in system RAM by default (`--cpu-moe`) and puts only the attention
 layers on the card. Measured on this machine at a 32,768-token context:
 
-| Configuration | Video memory | Prompt | Generation |
+| Model, configuration | Video memory | Prompt | Generation |
 |---|---|---|---|
-| Whole layers on the GPU (old default) | 15.4 GB | 310 tok/s | 39 tok/s |
-| **Experts in RAM (`--cpu-moe`, default now)** | **4.7 GB** | **361 tok/s** | **22 tok/s** |
-| Half the experts on the GPU (`-NCpuMoe 24`) | 12.8 GB | 496 tok/s | 40 tok/s |
+| Coding, whole layers on the GPU (old default) | 15.4 GB | 310 tok/s | 39 tok/s |
+| **Coding, experts in RAM (`--cpu-moe`, default now)** | **4.7 GB** | **361 tok/s** | **22 tok/s** |
+| Coding, half the experts on the GPU (`-NCpuMoe 24`) | 12.8 GB | 496 tok/s | 40 tok/s |
+| Market, experts in RAM (`-CpuMoe`, opt-in) | 5.5 GB | 282 tok/s | 23 tok/s |
 
 The default is the slowest at generating text and the only one with real
 headroom on a 16 GB card. It is also the reason an 8 GB card can run this at
@@ -195,10 +196,14 @@ produce. This machine hard-reset, with no crash dump, seconds after a
 benchmark of `-NCpuMoe 24` finished. The cause was not proven. It is recorded
 here so you do not run that configuration unattended and find out.
 
-The market model has much heavier attention — 223 KiB of cache per token of
-context, 7 GB at a 32,000-token window before any weights load — so its
-launcher keeps the old whole-layer behaviour until `--cpu-moe` has been
-measured on it. Pass `-CpuMoe` to try it.
+The market model's launcher keeps the old whole-layer behaviour for now, and
+the reason is not that experts-in-RAM does not fit — it does: the file's
+non-expert weights are only 2.4 GB, and the measured total was 5.5 GB. What is
+heavy about the market model on the GPU is its context cache, 223 KiB per
+token, 7 GB at a 32,000-token window, and that is the same either way. The
+reason is simply that the old configuration has not been benchmarked on it
+with the same script, so nobody can yet say whether 23 tokens a second is a
+gain or a loss for the daily briefings. Pass `-CpuMoe` to use it now.
 
 ---
 

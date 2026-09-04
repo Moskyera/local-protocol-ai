@@ -290,8 +290,15 @@ if ($CpuMoe -or $NCpuMoe -gt 0) {
 }
 
 $onGpuGB = $modelGB * ($NGL / $LAYERS)
-if ($CpuMoe) { Write-Host "  -> (the weight estimate below counts whole layers; with -CpuMoe the GPU share is far smaller)" -ForegroundColor DarkGray }
-Write-Host ("  -> offloading $NGL of $LAYERS layers ({0:N2} GB) + {1:N2} GB KV = {2:N2} GB of {3:N2} GB usable" -f $onGpuGB, $kvGB, ($onGpuGB + $kvGB), $usable) -ForegroundColor Green
+if ($CpuMoe -or $NCpuMoe -gt 0) {
+    # The whole-file estimate is wrong here and printing it looked like an
+    # overcommit when the card actually held 4.69 GB. Say what is true: the
+    # KV cache is the known part, the weight share is the non-expert tensors,
+    # and the measured totals are in the table above.
+    Write-Host ("  -> experts in system RAM; GPU holds the non-expert weights + {0:N2} GB KV (measured totals in this file's header)" -f $kvGB) -ForegroundColor Green
+} else {
+    Write-Host ("  -> offloading $NGL of $LAYERS layers ({0:N2} GB) + {1:N2} GB KV = {2:N2} GB of {3:N2} GB usable" -f $onGpuGB, $kvGB, ($onGpuGB + $kvGB), $usable) -ForegroundColor Green
+}
 if ($NGL -lt $LAYERS) {
     Write-Host ("     ({0} layers run on the CPU. Lower -Ctx to buy back a few.)" -f ($LAYERS - $NGL))
 }
