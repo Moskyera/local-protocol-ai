@@ -203,7 +203,18 @@ npm install @openhands/agent-canvas
 node node_modules/@openhands/agent-canvas/bin/agent-canvas.mjs
 ```
 
-It opens at `http://localhost:8000`. Then in Settings, add a provider:
+Once it is installed, this project can start the whole thing for you — the
+model, your tools and Canvas, with no Docker anywhere:
+
+```bash
+start-canvas.bat
+```
+
+That is the newer path. `start-ai.bat` is still the Docker one. They share the
+model, so run one or the other, not both.
+
+If you start Canvas by hand instead, it opens at `http://localhost:8000`. Then
+in Settings, add a provider:
 
 - **Provider:** OpenAI
 - **Base URL:** `http://127.0.0.1:8080/v1`
@@ -226,8 +237,17 @@ and the answer is stored in your browser, so a different browser or a cleared
 site data will ask again.
 
 **It also listens on all network interfaces**, unlike everything else here, and
-has no option to restrict that. If you use it on a laptop that joins public
-networks, add a firewall rule blocking incoming connections on port 8000.
+has no option to restrict that — only `--port`. In its default mode the API key
+is injected into the page automatically, so anyone who can open the address has
+full access to an agent that reads and writes your files. Run this once to shut
+that off at the firewall:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\secure-agent-canvas.ps1
+```
+
+It asks for administrator rights itself, and your own browser keeps working —
+loopback traffic never goes through the firewall.
 
 ---
 
