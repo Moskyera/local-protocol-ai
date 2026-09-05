@@ -717,3 +717,70 @@ class TestTheLinuxLauncherFixesStayFixed:
                 " --dry-run --no-cpu-moe --ctx " + str(ctx) + " | grep -oE 'n-gpu-layers [0-9]+'")
             got = int(out.split()[-1]) if out.strip() else None
             assert got == expected, mode + " ctx=" + str(ctx) + ": script " + str(got) + " vs .ps1 formula " + str(expected)
+
+
+class TestTheCanvasSandboxIsHonestAndSafe:
+    """The sandbox pieces make claims about isolation. These check the claims
+    are backed by what the scripts actually do, and that the launcher refuses
+    rather than pretends when the sandbox is not really there. Structural only:
+    creating the sandbox needs sudo and a wsl --shutdown, which no test can do."""
+
+    SETUP = "scripts/sandbox-canvas-setup.sh"
+    LAUNCHER = "start-canvas-sandboxed.bat"
+    DOC = "docs/SANDBOX.md"
+
+    def test_all_three_pieces_are_tracked(self):
+        t = tracked()
+        for f in (self.SETUP, self.LAUNCHER, self.DOC):
+            assert f in t, f"{f} is not committed"
+
+    def test_the_setup_makes_the_user_unprivileged(self):
+        s = read(self.SETUP)
+        assert "useradd" in s and "passwd -l" in s, "the agent user must have no password"
+        # and it must actively reject a user who ended up in sudo
+        assert "sudo group" in s and "die" in s
+
+    def test_the_setup_hides_the_windows_drive_and_merges_config(self):
+        s = read(self.SETUP)
+        assert "umask=077" in s, "drives must be hidden from other users"
+        # it must not clobber an existing wsl.conf: it reads then writes
+        assert "configparser" in s and 'cp.read(p)' in s
+
+    def test_the_setup_installs_into_the_agent_home_not_shared(self):
+        s = read(self.SETUP)
+        assert 'sudo -u "$AGENT_USER"' in s, "the toolchain must be installed AS the agent user"
+
+    def test_the_launcher_refuses_when_the_sandbox_is_absent(self):
+        b = read(self.LAUNCHER)
+        # missing user -> refuse
+        assert "does not exist" in b and "exit /b 1" in b
+        # user can still read C: -> refuse, do not silently run un-sandboxed
+        assert "ls /mnt/c" in b and "NOT active" in b
+
+    def test_the_launcher_binds_services_to_the_wsl_adapter_not_everywhere(self):
+        b = read(self.LAUNCHER)
+        assert "-BindHost %HOSTIP%" in b, "the model must bind the discovered adapter"
+        assert "--host %HOSTIP%" in b, "the MCP server must bind the discovered adapter"
+        # 0.0.0.0 may appear in a comment ("not 0.0.0.0, so not your LAN"); what
+        # must not exist is a bind flag actually set to it.
+        assert not re.search(r"(-BindHost|--host|--server\.address)\s+0\.0\.0\.0", b), (
+            "a service here binds every interface")
+
+    def test_the_launcher_discovers_the_address_rather_than_hardcoding_it(self):
+        b = read(self.LAUNCHER)
+        assert "Get-NetIPAddress" in b and "InterfaceAlias -match 'WSL'" in b
+        # no hardcoded 172.x adapter address baked in
+        assert not re.search(r"\b172\.\d+\.\d+\.\d+\b", b), "a WSL address is hardcoded; it renumbers"
+
+    def test_the_doc_states_the_limits_not_just_the_benefits(self):
+        d = read(self.DOC)
+        assert "What it is NOT" in d
+        assert "Not an air gap" in d
+        # it must admit a full task was not run inside the applied sandbox
+        assert "was **not** run inside the applied sandbox" in d
+
+    def test_the_ipv6_localhost_gotcha_is_written_down(self):
+        """localhost:8000 works via IPv6 forwarding; 127.0.0.1:8000 did not.
+        A reader who hardcodes the IPv4 literal will think it is broken."""
+        for f in (self.LAUNCHER, self.DOC):
+            assert "127.0.0.1" in read(f) and "localhost" in read(f)

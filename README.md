@@ -290,9 +290,15 @@ in Settings, add a provider:
 
 Two things to know before you commit to it:
 
-**It runs without a sandbox.** The agent has full access to your files, with
-nothing between it and your disk. The older Docker interface isolates it. The
-OpenHands project itself says this is why they are keeping the old one alive.
+**It runs without a sandbox by default.** The agent has full access to your
+files, with nothing between it and your disk. The older Docker interface
+isolates it, and the OpenHands project itself says this is why they keep the
+old one alive. On Windows with WSL there is a third option: `start-canvas-sandboxed.bat`
+runs the agent's terminal inside WSL as an unprivileged user who cannot see
+your `C:` drive, while the model, your tools and the browser UI stay where they
+are. It is a filesystem sandbox, not an air gap, and it needs a one-time setup.
+See [docs/SANDBOX.md](docs/SANDBOX.md) for exactly what it does and does not
+protect.
 
 **It reports usage to its developers**, but it does ask. The first screen is a
 consent dialog with a switch you can turn off before clicking through, and
