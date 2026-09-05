@@ -39,9 +39,12 @@ generation speed; see "About your graphics card" below.
 Everything here was built and measured on **Windows 11 with an AMD RX 9070 XT
 (16 GB), using Vulkan**. That is a real constraint on how much I can promise:
 NVIDIA cards will work — llama.cpp supports CUDA and it is the better-supported
-path — but the specific numbers in this guide were measured on AMD, and the
-launchers are written for Windows. On Linux or macOS the Python side works
-fine; you will need to start the model server yourself.
+path — but the specific numbers in this guide were measured on AMD. There is a
+launcher for each platform: `start-ai.bat` / `start-canvas.bat` on Windows,
+and `start-llama.sh` on Linux and macOS, which makes the same decisions with
+the same numbers and was tested branch by branch against fake binaries, not on
+a real Linux GPU. If you run it on one, the benchmark that tells us whether it
+behaves is `python scripts/bench_moe.py`.
 
 **About 40 GB of free disk space.** The two models are roughly 16 GB each and
 the Python packages add a few more.
@@ -151,6 +154,27 @@ start-ai.bat coder
 ```
 
 Leave off `coder` to start the market model instead.
+
+**On Linux or macOS:**
+
+```bash
+chmod +x start-llama.sh
+./start-llama.sh coder --dry-run     # shows every decision, starts nothing
+./start-llama.sh coder               # then for real
+```
+
+`coder` or `market`, same as Windows. It finds llama.cpp in `../llama` (or
+`LOCAL_AI_LLAMA_DIR`), reads your card's memory from `nvidia-smi` or sysfs,
+computes the same budget, and keeps the experts in system RAM for the coding
+model by default. If it cannot read how much video memory you have it stops
+and asks for `--vram-gb N` rather than guessing — guessing is what crashed the
+reference machine. It listens on `127.0.0.1` only.
+
+One thing to know first: **llama.cpp ships no CUDA binary for Linux.** With an
+NVIDIA card you either use the `ubuntu-vulkan-x64` tarball, which works out of
+the box, or build from source with `-DGGML_CUDA=ON`, which is faster. With AMD,
+the `ubuntu-rocm` tarball is the native one. The script says all this again
+when it cannot find a binary.
 
 The first start takes a few minutes while the model loads into your graphics
 card. When it is ready you will see the dashboard open in your browser.

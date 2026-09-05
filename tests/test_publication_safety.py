@@ -465,3 +465,129 @@ class TestTheLoadFlagFollowsTheLlamaBuild:
         src = read("start-llama-coder.ps1")
         for token in ("b10816", "235 t/s", "NOT adopted", "llama-b10816"):
             assert token in src, f"{token!r} missing from the coder launcher"
+
+
+class TestTheLinuxLauncherMakesTheSameDecisions:
+    """start-llama.sh is the Linux/macOS twin of the two PowerShell launchers.
+    Structural checks read the file; the behavioural ones run --dry-run inside
+    WSL Ubuntu against fake llama-server binaries, and skip where WSL is not
+    present. --dry-run starts nothing and stops nothing."""
+
+    SCRIPT = "start-llama.sh"
+
+    def test_it_refuses_to_run_unsafely(self):
+        src = read(self.SCRIPT)
+        assert "set -euo pipefail" in src
+        assert 'BIND="${LOCAL_AI_BIND:-127.0.0.1}"' in src, "loopback must be the default"
+        assert "will not guess" in src, "unknown VRAM must be a refusal, not a guess"
+
+    def test_defaults_match_the_windows_launchers(self):
+        src = read(self.SCRIPT)
+        coder = src.split("coder)")[1].split("market)")[0]
+        market = src.split("market)")[1].split("esac")[0]
+        assert "LAYERS=48" in coder and "KV_KIB_PER_TOKEN=51.0" in coder and "CTX:=32768" in coder
+        assert "CPU_MOE:=1" in coder and "JINJA=1" in coder
+        assert "LAYERS=30" in market and "KV_KIB_PER_TOKEN=223.1" in market and "CTX:=16384" in market
+        assert "CPU_MOE:=0" in market and "JINJA=0" in market
+        for token in ("--cache-type-k q8_0", "--cache-type-v q8_0", "-fa on", "--cache-reuse 256",
+                      "--batch-size 256", "--ubatch-size 128", "--cont-batching", "--no-warmup"):
+            assert token in src, f"{token} missing from the argument list"
+
+    def test_the_load_flag_is_detected_not_hardcoded(self):
+        src = read(self.SCRIPT)
+        assert "LOAD_FLAG=(--load-mode none)" in src and "LOAD_FLAG=(--no-mmap)" in src
+        assert "--help 2>&1 | grep -q -- '--load-mode'" in src
+
+    def test_no_machine_specific_path(self):
+        src = read(self.SCRIPT)
+        assert not re.search(r"(^|[^A-Za-z])/home/\w+", src), "a personal home path is hardcoded"
+        assert "C:\\" not in src.replace("C:\AI", "")  or "KQHEX" not in src
+
+    # -- behaviour, via WSL ------------------------------------------------- #
+
+    @staticmethod
+    def _wsl():
+        import shutil
+        return shutil.which("wsl.exe") or shutil.which("wsl")
+
+    def _dry(self, envs, *args):
+        import subprocess
+        wsl = self._wsl()
+        if not wsl:
+            pytest.skip("no WSL on this machine")
+        ws = "/mnt/c/Users/KQHEX/AppData/Local/Temp/claude/C--AI/3e501a2c-7379-4920-9d46-3b2fe337b016/scratchpad"
+        fakes = {"old": f"{ws}/fake-old", "new": f"{ws}/fake-new"}
+        envs = dict(envs)
+        if "LOCAL_AI_LLAMA_DIR" in envs:
+            envs["LOCAL_AI_LLAMA_DIR"] = fakes[envs["LOCAL_AI_LLAMA_DIR"]]
+        env_str = " ".join(f"{k}={v}" for k, v in envs.items())
+        cmd = (f"cd /mnt/c/AI/market-agent && env {env_str} bash ./start-llama.sh "
+               + " ".join(args) + " --dry-run")
+        r = subprocess.run([wsl, "-d", "Ubuntu", "-e", "bash", "-c", cmd],
+                           capture_output=True, text=True, timeout=120)
+        if "fake" not in (r.stdout + r.stderr) and r.returncode == 1 and "not found" in r.stderr:
+            pytest.skip("fake llama-server binaries not present in this session's scratchpad")
+        return r.returncode, r.stdout + r.stderr
+
+    def test_dry_run_coder_on_nvidia_uses_experts_in_ram_and_tool_calling(self):
+        rc, out = self._dry({"LOCAL_AI_LLAMA_DIR": "new", "LOCAL_AI_GPU": "nvidia",
+                             "LOCAL_AI_VRAM_GB": "16"}, "coder")
+        assert rc == 0, out
+        cmd = [l for l in out.splitlines() if l.startswith("command :")][0]
+        assert "--cpu-moe" in cmd and "--jinja" in cmd and "--load-mode none" in cmd
+        assert "--n-gpu-layers 48" in cmd and "--host 127.0.0.1" in cmd
+        assert "nothing started" in out
+
+    def test_dry_run_market_on_amd_fits_whole_layers_like_windows(self):
+        """int(30 * (14 - 3.49) / 15.84) = 19, the number the .ps1 produces."""
+        rc, out = self._dry({"LOCAL_AI_LLAMA_DIR": "old", "LOCAL_AI_GPU": "amd",
+                             "LOCAL_AI_VRAM_GB": "16"}, "market")
+        assert rc == 0, out
+        cmd = [l for l in out.splitlines() if l.startswith("command :")][0]
+        assert "--n-gpu-layers 19" in cmd and "--no-mmap" in cmd
+        assert "--jinja" not in cmd and "--cpu-moe" not in cmd
+
+    def test_dry_run_n_cpu_moe_takes_precedence(self):
+        rc, out = self._dry({"LOCAL_AI_LLAMA_DIR": "new", "LOCAL_AI_GPU": "nvidia",
+                             "LOCAL_AI_VRAM_GB": "16"}, "coder", "--n-cpu-moe", "24")
+        assert rc == 0, out
+        cmd = [l for l in out.splitlines() if l.startswith("command :")][0]
+        assert "--n-cpu-moe 24" in cmd and " --cpu-moe" not in cmd
+
+    def test_dry_run_refuses_a_context_that_cannot_fit(self):
+        rc, out = self._dry({"LOCAL_AI_LLAMA_DIR": "old", "LOCAL_AI_GPU": "amd",
+                             "LOCAL_AI_VRAM_GB": "16"}, "market", "--ctx", "70000")
+        assert rc == 1 and "does not fit" in out
+
+    def test_dry_run_refuses_to_guess_vram(self):
+        rc, out = self._dry({"LOCAL_AI_LLAMA_DIR": "new", "LOCAL_AI_GPU": "nvidia"}, "coder")
+        assert rc == 1 and "could not read its memory size" in out
+
+
+class TestTheLinuxLauncherSurvivesAWindowsCheckout:
+    """A bash script with CRLF line endings fails on Linux with the useless
+    message "$'\r': command not found", and a Windows clone with
+    core.autocrlf=true will happily produce exactly that unless the repository
+    pins the ending. The pin, the blob, and the executable bit are all checked
+    against the INDEX, because the working copy on this machine is not what a
+    Linux user receives."""
+
+    def _git(self, *args):
+        return subprocess.run(["git", "-C", ROOT, *args], capture_output=True)
+
+    def test_gitattributes_pins_shell_scripts_to_lf(self):
+        attrs = read(".gitattributes")
+        assert re.search(r"^\*\.sh\s+text\s+eol=lf", attrs, re.M), attrs
+        assert re.search(r"^\*\.bat\s+text\s+eol=crlf", attrs, re.M), "cmd.exe wants CRLF"
+
+    def test_the_committed_launcher_has_no_carriage_returns(self):
+        blob = self._git("cat-file", "-p", ":start-llama.sh").stdout
+        assert blob, "start-llama.sh is not in the index"
+        assert blob.count(b"\r") == 0, f"{blob.count(b'\r')} CR bytes in the blob"
+        assert blob.startswith(b"#!/usr/bin/env bash\n")
+
+    def test_the_committed_launcher_is_executable(self):
+        """Without mode 100755 a Linux clone gets a file it must chmod first;
+        the README says chmod +x anyway, but the clone should not need it."""
+        out = self._git("ls-files", "-s", "start-llama.sh").stdout.decode()
+        assert out.startswith("100755 "), out

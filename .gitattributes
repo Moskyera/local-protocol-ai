@@ -1,0 +1,6 @@
+# Line endings that matter for execution. Pinned so core.autocrlf on a Windows
+# clone cannot turn the bash launcher into "$'\r': command not found" under WSL,
+# or strip the CRLF that cmd.exe expects in a .bat.
+*.sh   text eol=lf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
