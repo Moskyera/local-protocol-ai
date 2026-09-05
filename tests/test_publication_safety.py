@@ -496,7 +496,12 @@ class TestTheLinuxLauncherMakesTheSameDecisions:
     def test_the_load_flag_is_detected_not_hardcoded(self):
         src = read(self.SCRIPT)
         assert "LOAD_FLAG=(--load-mode none)" in src and "LOAD_FLAG=(--no-mmap)" in src
-        assert "--help 2>&1 | grep -q -- '--load-mode'" in src
+        # Captured, then matched. Piping --help into grep -q under pipefail let
+        # grep close the pipe on the first match, the binary took SIGPIPE, the
+        # pipeline reported 141, and the wrong flag went out. Reproduced with a
+        # 300 KB help text; guarded by test_a_long_help_text_still_selects_load_mode.
+        assert 'HELP=$("$SERVER" --help 2>&1 || true)' in src
+        assert "| grep -q -- '--load-mode'" not in src, "the SIGPIPE-prone pipe is back"
 
     def test_no_machine_specific_path(self):
         src = read(self.SCRIPT)
@@ -591,3 +596,124 @@ class TestTheLinuxLauncherSurvivesAWindowsCheckout:
         the README says chmod +x anyway, but the clone should not need it."""
         out = self._git("ls-files", "-s", "start-llama.sh").stdout.decode()
         assert out.startswith("100755 "), out
+
+
+class TestTheLinuxLauncherFixesStayFixed:
+    """One guard per finding the adversarial review reproduced on 2026-09-05.
+    Each builds its own fixture under a folder WSL can see and runs --dry-run,
+    which starts and stops nothing. Skipped where WSL is absent."""
+
+    WS = "/mnt/c/Users/KQHEX/AppData/Local/Temp/claude/C--AI/3e501a2c-7379-4920-9d46-3b2fe337b016/scratchpad"
+    ENV = "LOCAL_AI_LLAMA_DIR=$WS/fake-new LOCAL_AI_GPU=nvidia LOCAL_AI_VRAM_GB=16"
+
+    @staticmethod
+    def _wsl():
+        import shutil
+        return shutil.which("wsl.exe") or shutil.which("wsl")
+
+    def _bash(self, script, timeout=180):
+        wsl = self._wsl()
+        if not wsl:
+            pytest.skip("no WSL on this machine")
+        pre = ("set -u; cd /mnt/c/AI/market-agent; WS=" + self.WS + "; "
+               "[ -x $WS/fake-new/llama-server ] || exit 97; ")
+        r = subprocess.run([wsl, "-d", "Ubuntu", "-e", "bash", "-c", pre + script],
+                           capture_output=True, text=True, timeout=timeout)
+        if r.returncode == 97:
+            pytest.skip("fake llama-server fixtures not present in this session's scratchpad")
+        return r.returncode, r.stdout + r.stderr
+
+    def test_a_symlinked_model_is_sized_through_the_link(self):
+        """stat without -L sized the 61-byte link and awk divided by zero."""
+        rc, out = self._bash(
+            "ln -sfn /mnt/c/AI/models/Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf /tmp/t-model.gguf; "
+            "env " + self.ENV + " LOCAL_AI_MODEL=/tmp/t-model.gguf "
+            "bash ./start-llama.sh coder --dry-run --no-cpu-moe")
+        assert rc == 0 and "division by zero" not in out, out
+        assert "(16.45 GB)" in out and "--n-gpu-layers 36" in out
+
+    def test_a_symlinked_llama_dir_and_binary_are_found(self):
+        """find without -L never matched a symlink, so a source build linked
+        in as ~/llama was reported as not found."""
+        rc, out = self._bash(
+            "d=/tmp/t-build; rm -rf $d; mkdir -p $d/bin; cp $WS/fake-new/llama-server $d/bin/; "
+            "chmod +x $d/bin/llama-server; ln -sfn $d /tmp/t-dirlink; "
+            "rm -rf /tmp/t-symbin; mkdir -p /tmp/t-symbin; ln -sfn $d/bin/llama-server /tmp/t-symbin/llama-server; "
+            "env LOCAL_AI_LLAMA_DIR=/tmp/t-dirlink LOCAL_AI_GPU=nvidia LOCAL_AI_VRAM_GB=16 "
+            "bash ./start-llama.sh coder --dry-run | grep '^server'; "
+            "env LOCAL_AI_LLAMA_DIR=/tmp/t-symbin LOCAL_AI_GPU=nvidia LOCAL_AI_VRAM_GB=16 "
+            "bash ./start-llama.sh coder --dry-run | grep '^server'")
+        assert rc == 0, out
+        assert "/tmp/t-dirlink/bin/llama-server" in out and "/tmp/t-symbin/llama-server" in out
+
+    def test_no_lscpu_does_not_kill_the_script(self):
+        """Under set -euo pipefail a missing lscpu made grep exit 1 and the bare
+        assignment took the script down, silently, before the budget. macOS
+        has no lscpu. The PATH is quoted: WSL's has 'Program Files' in it."""
+        rc, out = self._bash(
+            "mkdir -p /tmp/t-nolscpu; printf '#!/usr/bin/env bash\\nexit 127\\n' > /tmp/t-nolscpu/lscpu; "
+            "chmod +x /tmp/t-nolscpu/lscpu; "
+            'env "PATH=/tmp/t-nolscpu:$PATH" ' + self.ENV + " bash ./start-llama.sh coder --dry-run")
+        assert rc == 0, out
+        assert "threads: " in out and "dry run" in out
+
+    def test_a_long_help_text_still_selects_load_mode(self):
+        """--load-mode on the first line, then 300 KB more: the old pipe took
+        SIGPIPE and chose --no-mmap for a build that does not want it."""
+        rc, out = self._bash(
+            "mkdir -p /tmp/t-big; "
+            "printf '#!/usr/bin/env bash\\ncase \"$1\" in --version) echo v;; "
+            "--help) echo \"-lm, --load-mode MODE\"; yes x | head -c 300000;; esac\\n' > /tmp/t-big/llama-server; "
+            "chmod +x /tmp/t-big/llama-server; "
+            "env LOCAL_AI_LLAMA_DIR=/tmp/t-big LOCAL_AI_GPU=nvidia LOCAL_AI_VRAM_GB=16 "
+            "bash ./start-llama.sh coder --dry-run | grep '^bind'")
+        assert rc == 0 and "load: --load-mode none" in out, out
+
+    def test_ngl_on_cpu_is_honoured_loudly_not_dropped(self):
+        rc, out = self._bash(
+            "env LOCAL_AI_LLAMA_DIR=$WS/fake-new LOCAL_AI_GPU=cpu bash ./start-llama.sh coder --dry-run --ngl 20")
+        assert rc == 0, out
+        assert "WARNING" in out and "--ngl 20" in out and "--n-gpu-layers 20" in out
+
+    def test_an_unknown_gpu_value_is_refused(self):
+        rc, out = self._bash(
+            "env LOCAL_AI_LLAMA_DIR=$WS/fake-new LOCAL_AI_GPU=intel LOCAL_AI_VRAM_GB=16 "
+            "bash ./start-llama.sh coder --dry-run")
+        assert rc == 1 and "LOCAL_AI_GPU must be" in out, out
+
+    def test_help_first_exits_zero_and_shows_the_whole_header(self):
+        rc, out = self._bash("bash ./start-llama.sh --help")
+        assert rc == 0, out
+        assert "WHAT IS DELIBERATELY NOT MIRRORED" in out and "---- end of help ----" not in out
+
+    def test_a_value_option_without_a_value_is_a_usage_error(self):
+        rc, out = self._bash("env " + self.ENV + " bash ./start-llama.sh coder --dry-run --ctx")
+        assert rc != 0 and "--ctx needs a value" in out and "unbound variable" not in out, out
+
+    def test_layer_counts_match_the_powershell_formula_exactly(self):
+        """Rounding the inputs to two decimals before taking the layer count
+        handed out one layer too many on the reference card. The count is now
+        taken on the raw byte size; here it is compared, point by point, with
+        the .ps1 arithmetic evaluated at full precision on the real files."""
+        import math
+        # The models live NEXT TO the repository by the project's own layout
+        # rule; derive that, as the launchers do, rather than naming a drive.
+        models = os.path.join(os.path.dirname(ROOT), "models")
+        files = {
+            "coder": (os.path.join(models, "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf"), 48, 51.0),
+            "market": (os.path.join(models, "gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"), 30, 223.1),
+        }
+        for mode, (path, L, k) in files.items():
+            if not os.path.exists(path):
+                pytest.skip(mode + " model not present")
+        for mode, ctx in [("coder", 32768), ("coder", 65536), ("market", 16384),
+                          ("market", 32768), ("market", 24576)]:
+            path, L, k = files[mode]
+            m = os.path.getsize(path) / 1073741824
+            b = (16 - 2.0) - k * ctx / 1048576
+            expected = max(0, min(L, math.floor(L * (b / m)))) if b > 0 else None
+            rc, out = self._bash(
+                "env " + self.ENV + " bash ./start-llama.sh " + mode +
+                " --dry-run --no-cpu-moe --ctx " + str(ctx) + " | grep -oE 'n-gpu-layers [0-9]+'")
+            got = int(out.split()[-1]) if out.strip() else None
+            assert got == expected, mode + " ctx=" + str(ctx) + ": script " + str(got) + " vs .ps1 formula " + str(expected)
