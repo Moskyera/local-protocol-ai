@@ -1,11 +1,16 @@
 # Optional / experimental (voice, web UIs, heavy extras)
-# These are in experiments/ and not required for main boot or agentic platform.
+# Not required for the main boot or the agentic platform.
 # pip install -r requirements-experiments.txt
-faster-whisper
-piper-tts
-sounddevice
-webrtcvad
+
+# --- the voice assistant (start-voice.bat / python -m voice_agent) ---
+faster-whisper      # speech recognition, CPU int8
+piper-tts           # the voices; the .onnx files are downloaded separately, see README
+sounddevice         # microphone and speakers
+# turn-taking is Silero VAD, whose ONNX model ships inside faster-whisper
 numpy
+fastmcp             # discovers the tool server on :8765; without it local tools only
+
+# --- experiments/ only ---
 gradio
 pipecat-ai
 # Add other voice or one-off experiment deps here.

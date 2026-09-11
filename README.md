@@ -348,6 +348,74 @@ python -m openhands_mcp.server --transport streamable-http --port 8765
 
 ---
 
+## Talking to it (voice assistant)
+
+You can also just talk. Put on a headset, run
+
+```bash
+start-voice.bat
+```
+
+and say what you want, in Greek or English. It answers out loud in the same
+language and it can use every tool the stack has: read files, look things up,
+check the market, write a note, run a command. Everything runs on your
+machine; no audio ever leaves it.
+
+**What makes it safe to let it act.** Every tool is sorted into one of three
+classes before the model ever sees it:
+
+- *Read-only* things (the time, reading a file, a search) just happen.
+- *Reversible* things (writing a note, opening a file) are announced in one
+  sentence as they happen, so you can stop it.
+- *Anything destructive* — deleting, sending, paying, running a shell command,
+  changing code — is read back to you with the exact target, and then it
+  **waits**. It only proceeds if you say **"ναι, συνέχισε"** or **"yes, go
+  ahead"**. "όχι, ακύρωσέ το" / "no, cancel it" cancels. Silence cancels.
+  A single word never counts, in either direction: the speech recogniser
+  mis-hears lone words more often than not (we measured "Ναι" coming back as
+  "Ευχαριστώ"), so the phrase has to be two words or more.
+
+The model is also told never to claim it did something it did not do, and the
+tool result it sees after a cancellation says so in plain words.
+
+**What it needs, beyond the model:**
+
+1. The packages: `pip install -r requirements-experiments.txt` (speech
+   recognition, the voices, the microphone).
+2. Two voices from Piper, one per language, in `%USERPROFILE%\.piper\voices\`.
+   Download both files (`.onnx` and `.onnx.json`) of each from
+   [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices/tree/main):
+   `el/el_GR/joy/medium/` and `en/en_US/ryan/high/`. If one is missing, the
+   agent names the exact file it wants.
+3. A headset. Open speakers work too, but the agent will hear itself; a
+   headset is what it was tuned on.
+
+The first run downloads the speech-recognition model (about 1.6 GB) once.
+
+**Ways to run it:**
+
+| Command | What it does |
+|---|---|
+| `start-voice.bat` | starts the model with tool calling, the tool server, and the assistant |
+| `start-voice.bat text` | no microphone: type, and the replies are printed — same safety gate |
+| `start-voice.bat no-mcp` | local tools only (time, files, notes, clipboard, terminal) |
+| `start-voice.bat quiet` | starts nothing; connects to whatever is already running |
+| `python -m voice_agent --say "Γεια σου"` | just tests the voice |
+
+Say "τέλος" or "exit" to stop. If the model was started by another launcher
+without `--jinja`, the assistant will talk but cannot act; `start-voice.bat`
+starts it the right way when nothing is on port 8080.
+
+**Honest limits.** Speech recognition runs on the CPU (there is no Vulkan
+build of it for Windows), so a five-second sentence takes about three seconds
+to understand; the model then answers in one to four seconds. The Greek voice
+is the most accurate one available in this format (1.8 % character error rate
+when we transcribed it back), but it is a synthetic voice, and whether it
+sounds natural enough is your ear's call. Very short utterances — one word —
+are asked to be repeated rather than guessed.
+
+---
+
 ## Optional extras
 
 None of these are needed. Each one adds a single feature, and if you skip it

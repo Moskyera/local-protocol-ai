@@ -94,7 +94,15 @@ param(
     # The middle ground. Keep only the first N layers' experts on the CPU and
     # put the rest on the GPU, trading VRAM back for generation speed. Takes
     # precedence over -CpuMoe when set. 0 = not used.
-    [int]$NCpuMoe = 0
+    [int]$NCpuMoe = 0,
+
+    # Native tool calling. MEASURED 2026-09-11: with --jinja, llama.cpp b9587
+    # renders gemma-4's own chat template and parses its <|tool_call> syntax
+    # into structured tool_calls; without it the model prints the call as
+    # text and nothing runs. Required by the voice agent (start-voice.bat).
+    # OFF here because the briefings and Agent Canvas were measured without
+    # it and nothing in this launcher's own numbers was taken with it.
+    [switch]$Jinja = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -435,6 +443,7 @@ $args = @(
 $args += $loadFlag
 if ($NCpuMoe -gt 0) { $args += @("--n-cpu-moe", $NCpuMoe) }
 elseif ($CpuMoe)    { $args += "--cpu-moe" }
+if ($Jinja)          { $args += "--jinja" }
 
 
 
