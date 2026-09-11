@@ -70,16 +70,53 @@ foreach ($z in $zips) {
 
 if ($Apply) {
     Write-Host "== applying owner-only ACLs =="
+    # HOW, and why exactly this way. The first version ran
+    #   icacls <dir> /inheritance:r /grant:r "me:(OI)(CI)F" ... /t
+    # and left 5,236 files with an EMPTY ACL: /t strips inheritance from
+    # every file too, but a grant carrying folder flags (OI)(CI) is not
+    # applied to a file, so the files kept nothing - not even the owner
+    # could read them (MEASURED 2026-09-12; repaired with takeown + /reset).
+    # Now the explicit ACL goes on the TOP item only, and the children are
+    # reset to INHERIT from it. A file target gets plain F.
+    $grantsDir = @("${me}:(OI)(CI)F", "SYSTEM:(OI)(CI)F", "BUILTIN\Administrators:(OI)(CI)F")
+    $grantsFile = @("${me}:F", "SYSTEM:F", "BUILTIN\Administrators:F")
     foreach ($t in $targets) {
-        icacls "$t" /inheritance:r /grant:r "${me}:(OI)(CI)F" "SYSTEM:(OI)(CI)F" "BUILTIN\Administrators:(OI)(CI)F" /t /q | Out-Null
-        if ($LASTEXITCODE -eq 0) { Write-Host "  locked: $t" } else { Write-Host "  FAILED: $t (exit $LASTEXITCODE)" }
+        $isDir = (Get-Item $t).PSIsContainer
+        $grants = if ($isDir) { $grantsDir } else { $grantsFile }
+        icacls "$t" /inheritance:r /grant:r $grants /q | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Host "  FAILED: $t (exit $LASTEXITCODE)"; continue }
+        # strangers with their own explicit entry (MEASURED: KQ\CodexSandboxUsers
+        # on ~\.openhands survived /grant:r) are removed by name
+        foreach ($ace in (Get-Acl $t).Access) {
+            $id = [string]$ace.IdentityReference
+            if ($id -notmatch "SYSTEM|BUILTIN\\Administrators" -and $id -ne $me) {
+                icacls "$t" /remove:g "$id" /q | Out-Null
+                Write-Host "  removed: $id"
+            }
+        }
+        if ($isDir) {
+            # children inherit the locked folder's ACL; /c keeps going past
+            # files owned by another account (Docker created some)
+            icacls "$t\*" /reset /t /c /q | Out-Null
+        }
+        Write-Host "  locked: $t"
     }
-    Write-Host "Done. Re-run with -Status to see the result."
+    # prove it: the owner can still read a file under every locked folder
+    $broken = 0
+    foreach ($t in $targets) {
+        $sample = if ((Get-Item $t).PSIsContainer) { Get-ChildItem $t -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 } else { Get-Item $t }
+        if ($sample) {
+            try { [IO.File]::OpenRead($sample.FullName).Close() }
+            catch { $broken++; Write-Host "  CANNOT READ $($sample.FullName) - undoing this folder"; icacls "$t" /reset /t /c /q | Out-Null }
+        }
+    }
+    if ($broken -eq 0) { Write-Host "Done: you still read everything, nobody else does. Re-run with -Status to see it." }
+    else { Write-Host "Something is off with $broken folder(s); they were reset to inherited. Run -Status and tell me." }
 }
 if ($Undo) {
     Write-Host "== restoring inheritance =="
     foreach ($t in $targets) {
-        icacls "$t" /inheritance:e /t /q | Out-Null
+        icacls "$t" /reset /t /c /q | Out-Null
         Write-Host "  restored: $t"
     }
 }

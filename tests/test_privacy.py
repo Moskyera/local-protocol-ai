@@ -227,6 +227,19 @@ class TestTheLaunchersArePrivate:
         d = json.loads((tmp_path / ".openhands" / "plugins" / "local-tools" / ".mcp.json").read_text())
         assert d["mcpServers"]["local-tools"]["headers"]["Authorization"] == "Bearer tok123"
 
+    def test_the_files_script_never_strips_inheritance_recursively(self):
+        """MEASURED 2026-09-12: `icacls <dir> /inheritance:r /grant:r me:(OI)(CI)F /t`
+        left 5,236 files with an EMPTY ACL (folder flags are not applied to
+        files), locking the owner out of his own repo, token and Canvas key.
+        The explicit ACL goes on the top item only; children are reset to
+        inherit from it."""
+        src = _read("scripts/private-files.ps1")
+        for line in src.splitlines():
+            if "/inheritance:r" in line and not line.strip().startswith("#"):
+                assert "/t" not in line.split("/inheritance:r")[1], line.strip()
+        assert '/reset /t /c /q' in src and '"$t\*"' in src, "children must be reset to inherit"
+        assert "OpenRead" in src, "the script must prove the owner can still read"
+
     def test_the_firewall_script_finds_the_real_interpreter(self):
         src = _read("scripts/private-firewall.ps1")
         assert "pyvenv.cfg" in src and ".Target" in src and "-Undo" in src and "-Verify" in src

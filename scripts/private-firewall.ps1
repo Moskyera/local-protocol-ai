@@ -203,7 +203,9 @@ function Do-Apply {
     $disabled = @()
     if (Test-Path $DisabledFile) { $disabled = @(Get-Content $DisabledFile | ConvertFrom-Json) }
     $pat = "llama-server\.exe|nodejs\\node\.exe|uv\\python\\.*python\.exe|pythoncore.*python\.exe|com\.docker\.backend\.exe"
-    foreach ($r in (Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*Query User*" -and $_.Enabled -eq "True" })) {
+    # MEASURED: the rules Windows adds from its popups have 'Query User' in
+    # their internal Name, not always in the DisplayName
+    foreach ($r in (Get-NetFirewallRule | Where-Object { ($_.DisplayName -like "*Query User*" -or $_.Name -like "*Query User*") -and $_.Enabled -eq "True" })) {
         $prog = ($r | Get-NetFirewallApplicationFilter).Program
         if ($prog -and $prog -match $pat) {
             Disable-NetFirewallRule -Name $r.Name
