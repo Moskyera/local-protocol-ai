@@ -56,6 +56,8 @@ def main() -> int:
     ap.add_argument("model", help="model alias served by llama-server, e.g. gemma-4-26b-qat")
     ap.add_argument("--port", type=int, default=3000, help="OpenHands port")
     ap.add_argument("--mcp-port", type=int, default=8765)
+    ap.add_argument("--mcp-token", default="", help="bearer token the tool server requires")
+    ap.add_argument("--api-key", default="sk-dummy-local", help="the llama-server API key")
     ap.add_argument("--temperature", type=float, default=0.3)
     a = ap.parse_args()
 
@@ -76,7 +78,7 @@ def main() -> int:
             "llm": {
                 "model": f"openai/{a.model}",
                 "base_url": "http://host.docker.internal:8080/v1",
-                "api_key": "sk-dummy-local",
+                "api_key": a.api_key or "sk-dummy-local",
                 "temperature": a.temperature,
             }
         }),
@@ -90,6 +92,7 @@ def main() -> int:
                         "transport": "http",
                         "timeout": 120,
                         "description": "MOSKY market / on-chain / dev skills",
+                        **({"headers": {"Authorization": f"Bearer {a.mcp_token}"}} if a.mcp_token else {}),
                     }
                 }
             }

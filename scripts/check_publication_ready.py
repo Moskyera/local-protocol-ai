@@ -233,14 +233,17 @@ def check_nothing_unintended_gets_swept_in(r: Report) -> None:
 
 def check_the_guards_still_hold(r: Report) -> None:
     print("\nStructural guards")
-    res = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/test_publication_safety.py", "-q"],
-        cwd=ROOT, capture_output=True, text=True)
-    last = [l for l in res.stdout.splitlines() if l.strip()][-1] if res.stdout else ""
-    if res.returncode == 0:
-        r.ok("tests/test_publication_safety.py", last.strip())
-    else:
-        r.fail("tests/test_publication_safety.py", res.stdout[-1500:])
+    # the publication guards AND the privacy guards: a wallet address, a
+    # memory file or an undocumented external host must never be pushed
+    for suite in ("tests/test_publication_safety.py", "tests/test_privacy.py"):
+        res = subprocess.run(
+            [sys.executable, "-m", "pytest", suite, "-q"],
+            cwd=ROOT, capture_output=True, text=True)
+        last = [l for l in res.stdout.splitlines() if l.strip()][-1] if res.stdout else ""
+        if res.returncode == 0:
+            r.ok(suite, last.strip())
+        else:
+            r.fail(suite, res.stdout[-1500:])
 
 
 def main() -> int:

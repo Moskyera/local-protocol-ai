@@ -53,6 +53,12 @@ class Speaker:
         self._thread: Optional[threading.Thread] = None
         self._device = output_device
 
+    def preflight(self) -> None:
+        """Raise VoiceMissing now, naming the download, rather than on the
+        first sentence in that language mid-conversation."""
+        for lang in config.TTS_VOICES:
+            _voice_path(lang)
+
     def load(self, lang: str):
         if lang in self._voices:
             return self._voices[lang]

@@ -57,6 +57,11 @@ from urllib.parse import urlparse
 if any(a == "stdio" or a.endswith("=stdio") for a in sys.argv[1:]):
     sys.stdout = sys.stderr
 
+# PRIVATE MODE first: kill-switches and the socket guard, before requests,
+# moralis, ccxt or anything else that opens a connection is imported.
+import lpai_private
+lpai_private.activate()
+
 import requests  # safe web research (with strict limits)
 
 # Import GuardrailProvider (Proposal 2 - human approved)
@@ -214,8 +219,22 @@ except ImportError:
         print("[MCP] FATAL: fastmcp not installed. Run: pip install fastmcp")
         sys.exit(1)
 
+# Every caller must present the local bearer token: this server writes
+# files, opens pull requests and runs research, and anything on the
+# machine (a container, a sandbox, a rebound web page) could reach :8765
+# otherwise. In private mode the token is mandatory and minted if absent.
+_MCP_TOKEN = lpai_private.mcp_token(create=lpai_private.is_private())
+if lpai_private.is_private() and not _MCP_TOKEN:
+    print("private mode needs MCP_TOKEN (or a writable ~/.openhands/agent-canvas/mcp-token.txt)", file=sys.stderr)
+    sys.exit(2)
+_mcp_auth = None
+if _MCP_TOKEN:
+    from fastmcp.server.auth import StaticTokenVerifier
+    _mcp_auth = StaticTokenVerifier(tokens={_MCP_TOKEN: {"client_id": "local", "scopes": []}})
+
 mcp = FastMCP(
     name="pulsechain-evm-skills",
+    auth=_mcp_auth,
     # instructions for the agent about when to use these tools
     instructions=(
         "You are the MOSKY chat agent for this project. This is a chat interface with the user. "
@@ -231,7 +250,7 @@ mcp = FastMCP(
 
 @mcp.tool()
 def analyze_wallet(
-    address: Annotated[str, "REQUIRED. The exact wallet or contract address to analyze. Must be a valid 0x... hex string. DO NOT use 'wallet_address' or any other name. Example value: 0x38be95f628ed004a000ddf8724142a95e3c4b492"],
+    address: Annotated[str, "REQUIRED. The exact wallet or contract address to analyze. Must be a valid 0x... hex string. DO NOT use 'wallet_address' or any other name. Example value: 0x000000000000000000000000000000000000dEaD"],
     chain: Annotated[str, "OPTIONAL. Blockchain to query. Use exactly 'pulsechain' (default, recommended for this task) or 'ethereum'."] = "pulsechain",
     context: Annotated[Optional[str], "OPTIONAL. Any extra context from the user prompt, e.g. 'this is a fresh wallet' or 'focus on native PLS inflows and risk'. Can be empty."] = None
 ) -> Dict[str, Any]:
@@ -248,12 +267,12 @@ def analyze_wallet(
       {
         "name": "analyze_wallet",
         "params": {
-          "address": "0x38be95f628ed004a000ddf8724142a95e3c4b492",
+          "address": "0x000000000000000000000000000000000000dEaD",
           "chain": "pulsechain"
         }
       }
       </function_call>
-    - Thought example: use analyze_wallet with address is 0x38be95f628ed004a000ddf8724142a95e3c4b492 chain is pulsechain
+    - Thought example: use analyze_wallet with address is 0x000000000000000000000000000000000000dEaD chain is pulsechain
     - The tool 'analyze_wallet' (and execute_v2_task, get_market_context, fetch_full_wallet_profile, research) come from the native MCP sidecar — they are the PREFERRED and ONLY reliable way for real on-chain PulseChain/EVM data, exact USD-tiered risk scoring (your rules: >50k very large, >10k large, small $50-500 do not trigger heavy flags), and PnL.
 
     Performs real data fetch (Moralis if MORALIS_API_KEY present in env for rich categorized history + free public fallbacks:
@@ -276,7 +295,7 @@ def analyze_wallet(
     Much more reliable and automatic than code execution inside sandbox or asking user for explorer data.
     """
     if not address or not address.startswith("0x"):
-        return {"error": "Valid 0x address required", "example": "0x38be95f628ed004a000ddf8724142a95e3c4b492"}
+        return {"error": "Valid 0x address required", "example": "0x000000000000000000000000000000000000dEaD"}
 
     # Prepare context early (before any guard use)
     ctx = context or ""
@@ -545,7 +564,7 @@ def check_large_ecosystem_movements(address: str, chain: str = "pulsechain", min
     {
       "name": "check_large_ecosystem_movements",
       "params": {
-        "address": "0x38be95f628ed004a000ddf8724142a95e3c4b492",
+        "address": "0x000000000000000000000000000000000000dEaD",
         "chain": "pulsechain",
         "min_usd": 10000
       }
@@ -1961,6 +1980,63 @@ def consult_wealth_mentor(
         return result
 
 
+# --------------------------------------------------------------------------- #
+# PRIVATE MODE: the tools that send the owner's words or data to external
+# hosts are withheld from the tool list AND answer with an error when called
+# directly, so a caller that knows the name gets the same refusal.
+# --------------------------------------------------------------------------- #
+def _withhold_egress_tools() -> int:
+    if not lpai_private.is_private():
+        return 0
+    g = globals()
+    n = 0
+    for _name in sorted(lpai_private.EGRESS_TOOLS):
+        _fn = g.get(_name)
+        if _fn is None:
+            continue
+        try:
+            mcp.local_provider.remove_tool(_name)
+        except Exception:
+            pass
+        def _blocked(*a, __name=_name, __fn=_fn, **k):
+            # decided at CALL time, so a process that flips LPAI_PRIVATE=0
+            # (or a test that does) gets the real function
+            if lpai_private.is_private():
+                return lpai_private.egress_tool_error(__name)
+            return __fn(*a, **k)
+        _blocked.__name__ = _name
+        _blocked.__doc__ = getattr(_fn, "__doc__", "")
+        _blocked.__wrapped__ = _fn
+        g[_name] = _blocked
+        n += 1
+    if n:
+        print(f"{n} tools withheld: private mode (LPAI_PRIVATE=0 to allow them)", file=sys.stderr)
+    return n
+
+
+_WITHHELD = _withhold_egress_tools()
+
+
+class _LocalHostOnly:
+    """ASGI middleware: refuse requests whose Host header is not this
+    machine (DNS rebinding: a web page that resolves its own name to
+    127.0.0.1 would otherwise reach the server through the browser)."""
+
+    def __init__(self, app, port: int, extra: set):
+        self.app = app
+        self.ok = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}", "127.0.0.1", "localhost"} | extra
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            host = next((v.decode("latin-1") for k, v in scope.get("headers") or [] if k == b"host"), "")
+            if host.lower() not in self.ok:
+                await send({"type": "http.response.start", "status": 421,
+                            "headers": [(b"content-type", b"text/plain")]})
+                await send({"type": "http.response.body", "body": b"421 Misdirected Request: not a local host"})
+                return
+        await self.app(scope, receive, send)
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="PulseChain/EVM Skills MCP Server for OpenHands")
@@ -1981,5 +2057,13 @@ if __name__ == "__main__":
     print("   Extra hard gates: extra approval file, pre-apply test runner, size limit, human_approved. Rollback available if newer update makes previous change obsolete (score drop etc.).", file=sys.stderr)
     print("   Configure OpenHands MCP settings to connect (shttp_servers recommended).", file=sys.stderr)
 
-    # FastMCP run
-    mcp.run(transport=args.transport, host=args.host, port=args.port)
+    if args.transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        import uvicorn
+        extra = {f"{h}:{args.port}" for h in lpai_private.allowed_hosts() if h and h not in ("", "::", "0.0.0.0")}
+        extra |= {f"{args.host}:{args.port}"}
+        app = _LocalHostOnly(mcp.http_app(path="/mcp", transport=args.transport), args.port, extra)
+        print(f"   auth: {'bearer token required' if _MCP_TOKEN else 'NONE (set MCP_TOKEN)'} | private mode: {lpai_private.is_private()}",
+              file=sys.stderr)
+        uvicorn.run(app, host=args.host, port=args.port, log_level="warning")

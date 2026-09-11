@@ -151,6 +151,12 @@ def _fetch(url: str) -> list:
     return data if isinstance(data, list) else [data]
 
 
+def update_check_enabled() -> bool:
+    """Off in private mode (lpai_private sets LOCAL_AI_UPDATE_CHECK=0): even
+    a GET to GitHub tells GitHub the machine is running this."""
+    return os.getenv("LOCAL_AI_UPDATE_CHECK", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
 def check(repo: str, current: Optional[str] = None, *,
           force: bool = False) -> Optional[Update]:
     """Is there a newer release than `current`?

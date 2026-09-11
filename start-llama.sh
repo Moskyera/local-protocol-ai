@@ -74,6 +74,16 @@
 
 set -euo pipefail
 
+# Private mode (the default): nothing this machine runs phones home. Same
+# switches as scripts/private-env.bat; see docs/PRIVACY.md.
+export LPAI_PRIVATE="${LPAI_PRIVATE:-1}"
+if [ "$LPAI_PRIVATE" != "0" ]; then
+  export HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 HF_HUB_DISABLE_IMPLICIT_TOKEN=1 DO_NOT_TRACK=1 VITE_DO_NOT_TRACK=1
+  export GRADIO_ANALYTICS_ENABLED=False STREAMLIT_BROWSER_GATHER_USAGE_STATS=false LITELLM_LOCAL_MODEL_COST_MAP=True LITELLM_TELEMETRY=False
+  export ANONYMIZED_TELEMETRY=false BROWSER_USE_CLOUD_SYNC=false OH_TELEMETRY_EXPORTER=none OH_TELEMETRY_CONSENT=denied OH_TELEMETRY_CONSENT_MODE=override LOCAL_AI_UPDATE_CHECK=0
+fi
+
+
 # ---------------------------------------------------------------------------
 # Where things are
 # ---------------------------------------------------------------------------
@@ -303,7 +313,7 @@ if [[ "$HELP" == *--load-mode* ]]; then LOAD_FLAG=(--load-mode none); else LOAD_
 # The command
 # ---------------------------------------------------------------------------
 ARGS=(
-  -m "$MODEL_PATH" --alias "$ALIAS" --host "$BIND" --port "$PORT"
+  -m "$MODEL_PATH" --alias "$ALIAS" --host "$BIND" --port "$PORT" ${LLAMA_API_KEY:+--api-key "$LLAMA_API_KEY"}
   --n-gpu-layers "$NGL" -c "$CTX"
   --cache-type-k q8_0 --cache-type-v q8_0 -fa on --cache-reuse 256
   -t "$THREADS" --batch-size 256 --ubatch-size 128 --cont-batching

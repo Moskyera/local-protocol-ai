@@ -24,7 +24,7 @@ This takes the system to professional/agentic levels for PulseChain/EVM/DeFi wor
    - Or edit `~/.openhands/config.toml` (see the section we added) and restart openhands container.
 4. Added in-memory lru_cache on analyze_address to avoid re-fetching on repeats (big win for latency in chat/debug sessions).
 4. New conversation (or force new runtime by removing old runtime containers).
-5. Test with natural language: "analyze the wallet 0x38be95f628ed004a000ddf8724142a95e3c4b492 on pulsechain using the skills for full profile, risk score with USD native inflows, pnl..."
+5. Test with natural language: "analyze the wallet 0x000000000000000000000000000000000000dEaD on pulsechain using the skills for full profile, risk score with USD native inflows, pnl..."
 
 The agent should now see and prefer the native tools (no more "I cannot" + no need to paste Python).
 

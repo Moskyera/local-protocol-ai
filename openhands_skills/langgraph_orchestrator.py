@@ -29,7 +29,7 @@ Usage (after pip install langgraph langchain-core langchain-ollama pydantic):
 
     # Wallet-specific (still excellent)
     graph = get_wallet_analysis_graph()
-    result = graph.invoke({"user_input": "full risk and pnl for 0x38be95f628ed004a000ddf8724142a95e3c4b492 on pulsechain"})
+    result = graph.invoke({"user_input": "full risk and pnl for 0x000000000000000000000000000000000000dEaD on pulsechain"})
 
     # The more complete 3-agent supervisor (recommended for most work now)
     out = supervise_task("Analyze wallet 0x... on pulsechain and also research latest on-chain agent patterns 2026")
@@ -1988,7 +1988,7 @@ def supervise_task(
 # --- Example of using as automation (callable from anywhere) ---
 if __name__ == "__main__":
     import json
-    test_addr = "0x38be95f628ed004a000ddf8724142a95e3c4b492"
+    test_addr = "0x000000000000000000000000000000000000dEaD"
     print("=== Direct (always works) ===")
     res = direct_analyze_wallet(test_addr, "pulsechain", "automation test")
     rs = res.get("risk_score", {})

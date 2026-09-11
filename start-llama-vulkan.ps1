@@ -102,7 +102,12 @@ param(
     # text and nothing runs. Required by the voice agent (start-voice.bat).
     # OFF here because the briefings and Agent Canvas were measured without
     # it and nothing in this launcher's own numbers was taken with it.
-    [switch]$Jinja = $false
+    [switch]$Jinja = $false,
+
+    # Require this key on every request (llama-server --api-key). Set by
+    # start-ai.bat, whose 0.0.0.0 bind is reachable from the LAN. Empty =
+    # no key, which is fine on a loopback bind.
+    [string]$ApiKey = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -447,6 +452,7 @@ if ($Jinja)          { $args += "--jinja" }
 
 
 
+if ($ApiKey) { $args += @("--api-key", $ApiKey) }
 $proc = Start-Process -FilePath $SERVER_EXE -ArgumentList $args -WindowStyle Hidden -RedirectStandardOutput $logOut -RedirectStandardError $logErr -PassThru
 
 Write-Host "llama-server started (PID $($proc.Id)). Logs: $logOut / $logErr . First load of 15.8GB model can take 1-5+ min..."

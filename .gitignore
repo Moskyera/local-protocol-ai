@@ -127,3 +127,11 @@ _*.md
 
 # Output from code-review tooling, not part of the system
 .grok-review/
+
+# The assistant's memory is the owner's data, never the repo's. Only the two
+# example files stay tracked (see tests/test_privacy.py).
+memory/*
+!memory/example_live_broad_candidates.json
+!memory/last_broad_research_example.json
+memory/voice_notes.md
+memory/voice_log.jsonl

@@ -14,7 +14,7 @@ from openhands_skills.chain_analysis_expert import chain_analysis_expert
 import os
 
 print('=== LIVE WHALE ADDRESS TEST + OUTPUT ===')
-whale_addr = '0x38be95f628ed004a000ddf8724142a95e3c4b492'
+whale_addr = '0x000000000000000000000000000000000000dEaD'
 print('Testing with live whale-like address: ' + whale_addr)
 print('1. Global scan for large HEX PLSX INC (discover candidates):')
 moves = chain_analysis_expert.scan_large_ecosystem_movements(tokens=['HEX','PLSX','INC'], min_usd=5000, limit=5)

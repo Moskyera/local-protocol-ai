@@ -334,11 +334,15 @@ provides, create
   "mcpServers": {
     "local-tools": {
       "transport": "streamable-http",
-      "url": "http://127.0.0.1:8765/mcp"
+      "url": "http://127.0.0.1:8765/mcp",
+      "headers": { "Authorization": "Bearer <the token>" }
     }
   }
 }
 ```
+
+The token is in `%USERPROFILE%\.openhands\agent-canvas\mcp-token.txt`;
+`start-canvas.bat` writes this file for you, token included.
 
 Start the tool server alongside it:
 
@@ -400,15 +404,37 @@ The first run downloads the speech-recognition model (about 1.6 GB) once.
 | `start-voice.bat text` | no microphone: type, and the replies are printed — same safety gate |
 | `start-voice.bat no-mcp` | local tools only (time, files, notes, clipboard, terminal) |
 | `start-voice.bat quiet` | starts nothing; connects to whatever is already running |
+| `start-voice.bat online` | one session with the internet tools offered — each reads back the exact text before it leaves and waits for your yes |
 | `python -m voice_agent --say "Γεια σου"` | just tests the voice |
 
-Say "τέλος" or "exit" to stop. If the model was started by another launcher
-without `--jinja`, the assistant will talk but cannot act; `start-voice.bat`
-starts it the right way when nothing is on port 8080.
+Say "τέλος για σήμερα" (or "that's all, goodbye") to stop — two words or more,
+like everything else it must hear reliably. If the model was started by
+another launcher without `--jinja`, the assistant says so once and talks
+without tools; `start-voice.bat` starts it the right way when nothing is on
+port 8080.
+
+**It knows what it is.** The assistant is told, every day, what model it is,
+which machine it runs on, that nothing leaves it, what tools it has, where
+your notes are and what day it is — measured before that: it claimed to run
+"in a powerful cloud environment" and that the year was 2024. It keeps a log
+of every turn (`memory\voice_log.jsonl`: what it heard, how sure the
+recogniser was, what it ran, what you answered to a confirmation), so after
+a mistake you can read back what it actually heard, and it can recall earlier
+sessions when you ask "τι είπαμε χθες;". Dictated notes go to
+`memory\voice_notes.md`; it reads them back newest first. Both files are
+yours, git-ignored.
+
+**By voice it reads only your files.** It may read the repository and your
+Documents folder (`VOICE_READ_ROOTS` to change that) and never a secrets file
+by name. Opening a web link counts as a network request and is refused in
+private mode. Running a script means `run_command`, which reads the whole
+command back and waits.
 
 **Honest limits.** Speech recognition runs on the CPU (there is no Vulkan
-build of it for Windows), so a five-second sentence takes about three seconds
-to understand; the model then answers in one to four seconds. The Greek voice
+build of it for Windows), so a five-second sentence takes about a second and
+a half to understand (the recogniser used to run its encoder twice per
+sentence; it now runs it once); the model then answers in one to two seconds
+once warm, and the first sentence of a session pays a few seconds more. The Greek voice
 is the most accurate one available in this format (1.8 % character error rate
 when we transcribed it back), but it is a synthetic voice, and whether it
 sounds natural enough is your ear's call. Very short utterances — one word —
@@ -482,15 +508,27 @@ pip install -r requirements.txt
 ## Your privacy
 
 The model runs on your computer. Your prompts, your code and your documents are
-not sent anywhere.
+not sent anywhere — and **private mode**, which is on by default, makes sure of
+it rather than hoping:
 
-The exceptions, all of which are yours to turn on:
+- No Python process of this stack can open a connection to anything but this
+  machine. It fails with a clear error instead.
+- Every telemetry switch in the installed components is forced off before
+  they load (Agent Canvas, OpenHands, Streamlit, Hugging Face, litellm...).
+- The tools that would send your words to the internet — wallet forensics,
+  market data, web pages, research, pull requests — are withheld from the
+  agent entirely, and the tool server requires a token so nothing else on the
+  machine can drive it.
+- Two scripts you run yourself go further: a Windows Firewall lockdown so the
+  programs of the stack cannot reach the internet at all (with `-Verify` to
+  prove it and `-Undo` to reverse it), and file permissions so only you can
+  read `.env`, your notes and your logs.
 
-- The optional market data services, which see whatever you ask them about
-- Telegram, if you configure it
-- The update check, which asks GitHub for the release list — that request tells
-  GitHub your IP address and nothing else
-- Agent Canvas, if you use it, which reports usage to its own developers
+If you want the market data, the briefings or web research, set
+`LPAI_PRIVATE=0` in `.env`. [docs/PRIVACY.md](docs/PRIVACY.md) lists, for every
+one of them, exactly what leaves, to whom, and how to turn it off — and,
+honestly, what no setting can promise (Windows itself, Docker Desktop, your
+browser, a shell command an agent runs).
 
 `.env` holds your credentials and is excluded from git. Keep it that way.
 

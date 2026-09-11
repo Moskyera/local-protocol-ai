@@ -12,7 +12,7 @@ This demonstrates exactly what "use the skills as automation" means:
 
 Usage examples:
   # PowerShell
-  python automation/wallet_forensics_automation.py 0x38be95f628ed004a000ddf8724142a95e3c4b492 pulsechain
+  python automation/wallet_forensics_automation.py 0x000000000000000000000000000000000000dEaD pulsechain
 
   # From another script
   from automation.wallet_forensics_automation import analyze_and_report
@@ -81,7 +81,7 @@ def analyze_and_report(address: str, chain: str = "pulsechain", context: str = "
 def main():
     if len(sys.argv) < 2:
         print("Usage: python automation/wallet_forensics_automation.py <0xADDRESS> [pulsechain|ethereum] [optional context]")
-        print("Example: python automation/wallet_forensics_automation.py 0x38be95f628ed004a000ddf8724142a95e3c4b492 pulsechain")
+        print("Example: python automation/wallet_forensics_automation.py 0x000000000000000000000000000000000000dEaD pulsechain")
         sys.exit(1)
 
     addr = sys.argv[1]

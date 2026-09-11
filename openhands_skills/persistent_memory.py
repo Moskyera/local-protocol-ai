@@ -20,7 +20,7 @@ class PersistentMemory:
             db_path = os.path.join(self.memory_dir, "vector_db")
             os.makedirs(db_path, exist_ok=True)
             
-            self.client = chromadb.PersistentClient(path=db_path)
+            self.client = chromadb.PersistentClient(path=db_path, settings=chromadb.Settings(anonymized_telemetry=False))
             self.embedding_function = embedding_functions.DefaultEmbeddingFunction()
             self.collection = self.client.get_or_create_collection(
                 name="openhands_memory",

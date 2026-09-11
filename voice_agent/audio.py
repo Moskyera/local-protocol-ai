@@ -62,14 +62,21 @@ class _SileroVad:
 
 
 class Listener:
+    """The VAD runs INSIDE the PortAudio callback, on every frame, whether or
+    not anyone is listening. That is what makes barge-in real: the first
+    version ran it only inside listen(), which never runs while the agent is
+    speaking, so speech_started could not fire and 'όχι, σταμάτα' over an
+    answer became the next command instead (MEASURED)."""
+
     def __init__(self, input_device: Optional[str] = None):
         self._vad = _SileroVad(config.VAD_THRESHOLD)
         self._device = input_device
         self._frame = config.AUDIO_FRAME_SAMPLES
-        self._q: "queue.Queue[np.ndarray]" = queue.Queue()
+        self._q: "queue.Queue[tuple[np.ndarray, bool]]" = queue.Queue(maxsize=config.AUDIO_QUEUE_MAX_FRAMES)
         self._stream = None
-        self.speech_started = threading.Event()
+        self.speech_started = threading.Event()   # level-triggered by the callback
         self._muted = threading.Event()
+        self._run = 0                              # consecutive speech frames, callback thread
 
     # ---- stream lifecycle ----------------------------------------------
     def start(self) -> None:
@@ -88,7 +95,31 @@ class Listener:
     def _on_audio(self, indata, frames, t, status) -> None:
         if self._muted.is_set():
             return
-        self._q.put(indata[:, 0].copy())
+        frame = indata[:, 0].copy()
+        if len(frame) != self._frame:
+            return
+        is_speech = self._vad.is_speech(frame)          # 0.06 ms, in the audio thread
+        self._run = self._run + 1 if is_speech else 0
+        if self._run >= config.VAD_START_FRAMES:
+            self.speech_started.set()
+        try:
+            self._q.put_nowait((frame, is_speech))
+        except queue.Full:
+            # nobody has listened for a minute: keep the newest audio
+            try:
+                self._q.get_nowait()
+                self._q.put_nowait((frame, is_speech))
+            except (queue.Empty, queue.Full):
+                pass
+
+    def flush(self) -> None:
+        """Forget everything captured so far. Called before a question is
+        asked (nothing said BEFORE it can answer it) and after an
+        uninterrupted utterance (nothing captured DURING it is a command)."""
+        with self._q.mutex:
+            self._q.queue.clear()
+        self._run = 0
+        self.speech_started.clear()
 
     def mute(self, on: bool) -> None:
         """While the agent speaks through open speakers, its own voice would
@@ -96,17 +127,16 @@ class Listener:
         anyone on speakers, and it is what disables barge-in when set."""
         if on:
             self._muted.set()
-            with self._q.mutex:
-                self._q.queue.clear()
+            self.flush()
         else:
             self._muted.clear()
 
     # ---- the utterance ---------------------------------------------------
     def listen(self, timeout_s: Optional[float] = None) -> Optional[np.ndarray]:
-        """Wait for speech, capture until a pause, return it. None on timeout."""
-        self.speech_started.clear()
+        """Wait for speech, capture until a pause, return it. None on timeout.
+        Consumes the callback's (frame, is_speech) pairs; the VAD is not run
+        here (two LSTM states would diverge)."""
         end_frames = int(config.VAD_END_SILENCE_MS / config.AUDIO_FRAME_MS)
-        self._vad.reset()
         max_frames = int(config.VAD_MAX_UTTERANCE_S * 1000 / config.AUDIO_FRAME_MS)
         pre = []                    # ring of the last few frames before speech
         voiced: list[np.ndarray] = []
@@ -119,12 +149,9 @@ class Listener:
             if t_end and not started and time.monotonic() > t_end:
                 return None
             try:
-                frame = self._q.get(timeout=0.25)
+                frame, is_speech = self._q.get(timeout=0.25)
             except queue.Empty:
                 continue
-            if len(frame) != self._frame:
-                continue
-            is_speech = self._vad.is_speech(frame)
 
             if not started:
                 pre.append(frame); pre = pre[-10:]
@@ -140,4 +167,5 @@ class Listener:
             if silence >= end_frames or len(voiced) >= max_frames:
                 # drop the trailing silence frames except a little tail
                 keep = max(0, len(voiced) - silence + 3)
+                self.speech_started.clear()
                 return np.concatenate(voiced[:keep])

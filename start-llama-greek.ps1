@@ -29,7 +29,12 @@ param(
     [string]$Alias = "krikri-8b-greek",
     [int]$Port = 8081,
     [int]$Threads = 12,          # leave cores for the GPU server's own work
-    [int]$Context = 16384
+    [int]$Context = 16384,
+
+    # Require this key on every request (llama-server --api-key). Set by
+    # start-ai.bat, whose 0.0.0.0 bind is reachable from the LAN. Empty =
+    # no key, which is fine on a loopback bind.
+    [string]$ApiKey = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -96,6 +101,7 @@ $serverArgs = @(
     "--no-warmup"
 )
 
+if ($ApiKey) { $args += @("--api-key", $ApiKey) }
 $proc = Start-Process -FilePath $SERVER_EXE -ArgumentList $serverArgs -WindowStyle Hidden `
                       -RedirectStandardOutput $logOut -RedirectStandardError $logErr -PassThru
 Write-Host "Started PID $($proc.Id). Logs: $logOut"

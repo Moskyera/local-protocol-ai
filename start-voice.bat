@@ -11,16 +11,21 @@ color 0B
 ::   1. gemma-4 on :8080 with --jinja (native tool calls) and --cpu-moe
 ::      (experts in RAM, ~3.7 GB VRAM measured 2026-09-11)
 ::   2. the MCP tool server on :8765, natively (no Docker), 35 tools
-::   3. python -m voice_agent   (whisper on CPU, Piper voices, webrtcvad)
+::   3. python -m voice_agent   (whisper on CPU, Piper voices, Silero VAD)
 ::
 :: Options, in any order:
 ::   text     no microphone: type instead of speaking, same safety gate
 ::   no-mcp   local tools only (time, files, notes, clipboard, terminal)
 ::   quiet    do not start anything; just connect to what is already running
+::   online   LPAI_PRIVATE=0 for this run: the internet tools are offered by
+::            voice, each read back in full and needing the spoken phrase
 
 set "PROJECT=%~dp0"
 if "%PROJECT:~-1%"=="\" set "PROJECT=%PROJECT:~0,-1%"
 for %%I in ("%PROJECT%\..") do set "AI_ROOT=%%~fI"
+
+:: Private mode (the default): telemetry switches, tool-server token. See docs/PRIVACY.md
+call "%PROJECT%\scripts\private-env.bat"
 
 set "VENV="
 if exist "%PROJECT%\.venv\Scripts\python.exe" set "VENV=%PROJECT%\.venv"
@@ -43,7 +48,9 @@ for %%A in (%*) do (
     if /i "%%~A"=="text"   set "MODE_ARGS=!MODE_ARGS! --text"
     if /i "%%~A"=="no-mcp" (set "MODE_ARGS=!MODE_ARGS! --no-mcp" & set "WANT_MCP=0")
     if /i "%%~A"=="quiet"  set "QUIET=1"
+    if /i "%%~A"=="online" set "LPAI_PRIVATE=0"
 )
+if /i "%LPAI_PRIVATE%"=="0" echo [!] online: the internet tools are ON for this run.
 
 echo ========================================
 echo   Local Protocol AI - voice assistant

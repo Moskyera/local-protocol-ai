@@ -1,3 +1,4 @@
+import lpai_private; lpai_private.activate()   # private mode before streamlit loads
 import streamlit as st
 import json
 from pathlib import Path

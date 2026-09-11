@@ -301,7 +301,7 @@ class ResearchAgent:
         if requests and ("paper" in focus.lower() or "research" in focus.lower() or "ai" in focus.lower() or "self" in focus.lower()):
             try:
                 arxiv_query = query.replace(' ', '+') + '+ai+agent+self+improving'
-                arxiv_url = f"http://export.arxiv.org/api/query?search_query=all:{arxiv_query}&start=0&max_results={max_results}"
+                arxiv_url = f"https://export.arxiv.org/api/query?search_query=all:{arxiv_query}&start=0&max_results={max_results}"
                 resp = requests.get(arxiv_url, timeout=10)
                 if resp.status_code == 200:
                     import re

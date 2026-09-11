@@ -9,6 +9,12 @@ from typing import List
 
 load_dotenv(override=True)
 
+# PRIVATE MODE (the default): telemetry off, no connection may leave the
+# machine. Must run right after .env is read and before any library that
+# opens sockets is imported. See lpai_private.py and docs/PRIVACY.md.
+import lpai_private
+lpai_private.activate()
+
 # =========================================
 # SETTINGS CLASS
 # =========================================
@@ -83,8 +89,9 @@ class Config:
             missing.append("FINLIGHT_API_KEY")
         # MORALIS_API_KEY is optional (free tier bonus for richer PulseChain data in chain_analysis_expert)
 
-        if missing:
+        if missing and not lpai_private.is_private():
             raise ValueError(f"❌ Missing required keys in .env: {', '.join(missing)}")
+        # in private mode the keys are unused: a blank .env must not stop the import
 
 
 # Global instance (validate on import — required keys must be present in .env)

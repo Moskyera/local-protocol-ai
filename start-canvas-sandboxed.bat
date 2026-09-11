@@ -22,6 +22,9 @@ REM ---------------------------------------------------------------------------
 set "PROJECT=%~dp0"
 if "%PROJECT:~-1%"=="\" set "PROJECT=%PROJECT:~0,-1%"
 for %%I in ("%PROJECT%\..") do set "AI_ROOT=%%~fI"
+
+:: Private mode (the default): telemetry switches, tool-server token. See docs/PRIVACY.md
+call "%PROJECT%\scripts\private-env.bat"
 set AGENT_USER=lpai-agent
 set DISTRO=Ubuntu
 set MODEL_PORT=8080
@@ -109,6 +112,7 @@ echo       ready.
 
 :: === Your tools, bound to the WSL adapter only ===
 echo [2/3] Starting the MCP tool server on %HOSTIP%:%MCP_PORT% ...
+set "LPAI_ALLOW_HOSTS=%HOSTIP%"
 start "Local Protocol AI - tools" /min cmd /c ""%VENV%\Scripts\python.exe" -X utf8 -m openhands_mcp.server --transport streamable-http --host %HOSTIP% --port %MCP_PORT%"
 timeout /t 4 /nobreak >nul
 
@@ -120,7 +124,7 @@ echo [3/3] Starting Agent Canvas in WSL as %AGENT_USER% ...
 set "KEYFILE=%USERPROFILE%\.openhands\agent-canvas\api-key.txt"
 set "KEY="
 if exist "%KEYFILE%" set /p KEY=<"%KEYFILE%"
-wsl -d %DISTRO% -u %AGENT_USER% -e bash -lc "export PATH=$HOME/.local/bin:$HOME/.local/node/bin:$PATH; export LOCAL_BACKEND_API_KEY='%KEY%'; export LPAI_HOST='%HOSTIP%'; cd ~/lpai-canvas && setsid nohup node node_modules/@openhands/agent-canvas/bin/agent-canvas.mjs >~/lpai-canvas/canvas.log 2>&1 </dev/null & sleep 2; echo started"
+wsl -d %DISTRO% -u %AGENT_USER% -e bash -lc "export PATH=$HOME/.local/bin:$HOME/.local/node/bin:$PATH; export LOCAL_BACKEND_API_KEY='%KEY%'; export LPAI_HOST='%HOSTIP%'; export MCP_TOKEN='%MCP_TOKEN%'; export LPAI_PRIVATE='%LPAI_PRIVATE%' LPAI_ALLOW_HOSTS='%HOSTIP%' DO_NOT_TRACK=1 VITE_DO_NOT_TRACK=1 OH_TELEMETRY_EXPORTER=none OH_TELEMETRY_CONSENT=denied OH_TELEMETRY_CONSENT_MODE=override LITELLM_LOCAL_MODEL_COST_MAP=True HF_HUB_OFFLINE=1; cd ~/lpai-canvas && setsid nohup node node_modules/@openhands/agent-canvas/bin/agent-canvas.mjs >~/lpai-canvas/canvas.log 2>&1 </dev/null & sleep 2; echo started"
 
 set /a _w=0
 :wc

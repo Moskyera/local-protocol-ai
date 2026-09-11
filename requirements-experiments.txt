@@ -3,7 +3,7 @@
 # pip install -r requirements-experiments.txt
 
 # --- the voice assistant (start-voice.bat / python -m voice_agent) ---
-faster-whisper      # speech recognition, CPU int8
+faster-whisper==1.2.1   # speech recognition, CPU int8; pinned: stt.py drives its encoder directly
 piper-tts           # the voices; the .onnx files are downloaded separately, see README
 sounddevice         # microphone and speakers
 # turn-taking is Silero VAD, whose ONNX model ships inside faster-whisper

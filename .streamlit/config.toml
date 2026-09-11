@@ -1,0 +1,8 @@
+# Streamlit sends usage statistics to Streamlit's servers by default
+# (browser.gatherUsageStats). Off here, at the repo level, so the dashboard
+# never does, whatever the environment says.
+[browser]
+gatherUsageStats = false
+
+[server]
+address = "127.0.0.1"

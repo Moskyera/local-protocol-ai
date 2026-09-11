@@ -40,7 +40,7 @@ It returns structured report with:
 
 **NATIVE MCP TOOLS (PROFESSIONAL UPGRADE - PREFERRED):**
 If analyze_wallet (or fetch_full_wallet_profile) is available as a tool (MCP sidecar), call it **directly using the exact schema**:
-- Parameter 1 name MUST be "address" (value = the 0x... string). Example: analyze_wallet with address is 0x38be95f628ed004a000ddf8724142a95e3c4b492
+- Parameter 1 name MUST be "address" (value = the 0x... string). Example: analyze_wallet with address is 0x000000000000000000000000000000000000dEaD
 - Parameter 2 (optional) name "chain" = "pulsechain".
 NEVER use "wallet_address" or invent params - the call will be rejected with error like the one you just saw.
 Gets the full real-data report (USD risk, PnL, flows, portfolio, persistent memory) without any code execution or browser.

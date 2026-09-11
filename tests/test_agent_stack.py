@@ -37,7 +37,7 @@ class TestIntentRouter:
         ("what is the BTC outlook", "market"),
         ("build me a website with a database", "website"),
         ("create a landing page", "website"),
-        ("analyze wallet 0x38be95f628ed004a000ddf8724142a95e3c4b492", "wallet"),
+        ("analyze wallet 0x000000000000000000000000000000000000dEaD", "wallet"),
         ("write an ERC20 staking contract on pulsechain", "solidity"),
         ("design a printable enclosure for a raspberry pi", "cad3d"),
         ("tell me about the weather", "legacy"),
@@ -2545,6 +2545,9 @@ class TestNoInventedMarketView:
             lambda p: "(LLM error - check llama-server logs)")
         monkeypatch.setattr(A, "generate_market_report", fake)
         monkeypatch.setattr(M, "generate_market_report", fake)
+        # the news feed is stubbed: this test used to reach api.tavily.com for
+        # real (found when private mode blocked it), which a test must never do
+        monkeypatch.setattr(M, "get_market_news", lambda q: [{"title": "a"}, {"title": "b"}])
         return A.generate_ai_advisor("m", "s"), M.generate_macro_tech_report()
 
     def test_a_raising_model_invents_nothing(self, monkeypatch):
@@ -3014,8 +3017,12 @@ class TestCreatePrIsHonest:
 
     @staticmethod
     def _fn():
+        # create_pr is an egress tool: in private mode (the default) the
+        # module exposes a refusal wrapper. These tests are about the real
+        # function's honesty, so they reach it through __wrapped__.
         from openhands_mcp import server as S
-        return getattr(S.create_pr, "fn", S.create_pr)
+        fn = getattr(S.create_pr, "fn", S.create_pr)
+        return getattr(fn, "__wrapped__", fn)
 
     def test_it_no_longer_raises(self):
         r = self._fn()(repo_name="o/r", source_branch="b", title="T", body="B")

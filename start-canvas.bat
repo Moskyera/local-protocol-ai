@@ -16,6 +16,9 @@ set "PROJECT=%~dp0"
 if "%PROJECT:~-1%"=="\" set "PROJECT=%PROJECT:~0,-1%"
 for %%I in ("%PROJECT%\..") do set "AI_ROOT=%%~fI"
 
+:: Private mode (the default): telemetry switches, tool-server token. See docs/PRIVACY.md
+call "%PROJECT%\scripts\private-env.bat"
+
 set "VENV="
 if exist "%PROJECT%\.venv\Scripts\python.exe" set "VENV=%PROJECT%\.venv"
 if not defined VENV if exist "%AI_ROOT%\ai-env\Scripts\python.exe" set "VENV=%AI_ROOT%\ai-env"
@@ -119,6 +122,11 @@ echo       ready.
 :: Natively, not in a container. Loopback by default.
 echo [2/3] Starting the MCP tool server on :%MCP_PORT% ...
 start "Local Protocol AI - tools" /min cmd /c ""%VENV%\Scripts\python.exe" -X utf8 -m openhands_mcp.server --transport streamable-http --port %MCP_PORT%"
+
+:: Tell Agent Canvas how to reach the tool server WITH the bearer token it
+:: now requires. Merges into the plugin file the README describes; keeps
+:: whatever else is in it.
+"%VENV%\Scripts\python.exe" -X utf8 "%PROJECT%\scripts\canvas_mcp_config.py" --port %MCP_PORT% 2>&1
 timeout /t 4 /nobreak >nul
 
 :: === AGENT CANVAS ===

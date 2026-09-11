@@ -12,6 +12,9 @@ if "%PROJECT:~-1%"=="\" set "PROJECT=%PROJECT:~0,-1%"
 for %%I in ("%PROJECT%\..") do set "AI_ROOT=%%~fI"
 set "USER_OPENHANDS=%USERPROFILE%\.openhands"
 
+:: Private mode (the default): telemetry switches, tool-server token. See docs/PRIVACY.md
+call "%PROJECT%\scripts\private-env.bat"
+
 :: The Python to use, in order of preference: a virtualenv inside the repo,
 :: the shared one beside it, and otherwise stop with instructions. Failing
 :: here with a clear message beats failing later on a confusing ImportError.
@@ -94,12 +97,17 @@ powershell -ExecutionPolicy Bypass -File "%PROJECT%\sync-openhands-model.ps1" -M
 :: -BindHost 0.0.0.0 is passed on PURPOSE and only here. The launcher's own
 :: default is 127.0.0.1, but the OpenHands container reaches the host through
 :: host.docker.internal, which is not loopback, so a loopback-bound server is
-:: invisible to it. If you are NOT running the Docker stack - the npm Agent
-:: Canvas path, for instance - start the backend yourself without this flag
-:: and nothing on your network can reach your GPU.
+:: invisible to it. Because that bind is reachable from the LAN, the server
+:: now REQUIRES an API key (-ApiKey): a device on your network can see the
+:: port but cannot use your GPU. The key is minted once next to the tool
+:: token and handed to the containers below. scripts/private-firewall.ps1
+:: closes the port to the LAN entirely.
+set "LLAMA_KEY_FILE=%USERPROFILE%\.openhands\agent-canvas\llama-key.txt"
+if not exist "%LLAMA_KEY_FILE%" powershell -NoProfile -Command "$b = New-Object byte[] 24; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [IO.File]::WriteAllText('%LLAMA_KEY_FILE%', 'sk-' + ([Convert]::ToBase64String($b) -replace '[+/=]','x'))" >nul 2>&1
+set /p LLAMA_API_KEY=<"%LLAMA_KEY_FILE%"
 :: === RELIABLE LLM BACKEND: llama.cpp on AMD RX 9070 XT via Vulkan ===
 echo [1/5] Starting llama.cpp backend: %BACKEND_NAME% on :8080 ...
-powershell -ExecutionPolicy Bypass -File "%PROJECT%\%LLAMA_SCRIPT%" -Parallel 4 -BindHost 0.0.0.0 2>&1 || echo [WARNING] llama (Vulkan) starter reported issue (see instructions above). Continuing...
+powershell -ExecutionPolicy Bypass -File "%PROJECT%\%LLAMA_SCRIPT%" -Parallel 4 -BindHost 0.0.0.0 -ApiKey "%LLAMA_API_KEY%" 2>&1 || echo [WARNING] llama (Vulkan) starter reported issue (see instructions above). Continuing...
 echo Waiting for the backend to become ready. The launcher prints its VRAM budget
 echo above: it sizes context and offloaded layers to the card instead of asking for
 echo more than the 16 GB it has, which is what bugchecked the machine on 2026-09-03.
@@ -238,9 +246,9 @@ echo        OpenHands workspace (readable folder): %WORKSPACE%
 docker rm -f cranky_hypatia >nul 2>&1
 
 if /i "%MOSKY_OH%"=="v0" (
-    docker run -d --name cranky_hypatia -p 127.0.0.1:%OPENHANDS_PORT%:%OPENHANDS_PORT% -v "%WORKSPACE%":/workspace -v %PROJECT%\memory:/app/memory -v %PROJECT%\openhands_skills:/app/openhands_skills -v "%OH_STATE%":/.openhands -v //var/run/docker.sock:/var/run/docker.sock --add-host host.docker.internal:host-gateway -e OPENHANDS_WORKSPACE_BASE=/workspace -e LLM_MODEL=%OH_MODEL% -e OPENAI_BASE_URL=http://host.docker.internal:8080/v1 -e OPENAI_API_KEY=sk-dummy-local -e AGENT_SERVER_IMAGE_REPOSITORY=my-openhands-runtime -e AGENT_SERVER_IMAGE_TAG=latest -e SANDBOX_VOLUMES=/workspace:/workspace %OH_IMAGE%
+    docker run -d --name cranky_hypatia -p 127.0.0.1:%OPENHANDS_PORT%:%OPENHANDS_PORT% -v "%WORKSPACE%":/workspace -v %PROJECT%\memory:/app/memory -v %PROJECT%\openhands_skills:/app/openhands_skills -v "%OH_STATE%":/.openhands -v //var/run/docker.sock:/var/run/docker.sock --add-host host.docker.internal:host-gateway -e OPENHANDS_WORKSPACE_BASE=/workspace -e LLM_MODEL=%OH_MODEL% -e OPENAI_BASE_URL=http://host.docker.internal:8080/v1 -e OPENAI_API_KEY=%LLAMA_API_KEY% -e LPAI_PRIVATE=%LPAI_PRIVATE% -e MCP_TOKEN=%MCP_TOKEN% -e DO_NOT_TRACK=1 -v "%PROJECT%\.env.example":/workspace/.env:ro -e AGENT_SERVER_IMAGE_REPOSITORY=my-openhands-runtime -e AGENT_SERVER_IMAGE_TAG=latest -e SANDBOX_VOLUMES=/workspace:/workspace %OH_IMAGE%
 ) else (
-    docker run -d --name cranky_hypatia -p 127.0.0.1:%OPENHANDS_PORT%:3000 -v "%WORKSPACE%":/workspace -v "%OH_STATE%":/.openhands -v //var/run/docker.sock:/var/run/docker.sock --add-host host.docker.internal:host-gateway -e SANDBOX_USER_ID=0 -e SANDBOX_VOLUMES="%WORKSPACE%:/workspace" %OH_IMAGE%
+    docker run -d --name cranky_hypatia -p 127.0.0.1:%OPENHANDS_PORT%:3000 -v "%WORKSPACE%":/workspace -v "%OH_STATE%":/.openhands -v //var/run/docker.sock:/var/run/docker.sock --add-host host.docker.internal:host-gateway -e SANDBOX_USER_ID=0 -e SANDBOX_VOLUMES="%WORKSPACE%:/workspace" -e LPAI_PRIVATE=%LPAI_PRIVATE% -e MCP_TOKEN=%MCP_TOKEN% -e DO_NOT_TRACK=1 -v "%PROJECT%\.env.example":/workspace/.env:ro %OH_IMAGE%
 )
 
 :: === MCP SKILLS SIDECAR (8765) ===
@@ -248,7 +256,14 @@ if /i "%MOSKY_OH%"=="v0" (
 :: Matches project docker-compose mcp-skills service. Uses host port publish + host.docker.internal in OpenHands config for reachability (no compose network).
 echo [4/5] Starting MCP Skills sidecar (native tools on 8765: analyze_wallet with exact 'address' param, execute_v2_task, get_market_context - using streamable-http for lower latency)...
 docker rm -f mcp-skills >nul 2>&1
-docker run -d --name mcp-skills -p 127.0.0.1:%MCP_PORT%:%MCP_PORT% --env-file .env -e PYTHONPATH=/workspace -v %PROJECT%:/workspace -v //var/run/docker.sock:/var/run/docker.sock my-openhands-runtime:latest python -m openhands_mcp.server --transport streamable-http --host 0.0.0.0 --port %MCP_PORT%
+:: In private mode the container gets NO .env (the example file masks it and
+:: the keys are unused anyway) and only loopback + host.docker.internal.
+:: Outside private mode the keys are passed, as before.
+if /i "%LPAI_PRIVATE%"=="0" (
+    docker run -d --name mcp-skills -p 127.0.0.1:%MCP_PORT%:%MCP_PORT% --env-file .env -e LPAI_PRIVATE=0 -e MCP_TOKEN=%MCP_TOKEN% -e OPENAI_API_KEY=%LLAMA_API_KEY% -e PYTHONPATH=/workspace -v %PROJECT%:/workspace -v //var/run/docker.sock:/var/run/docker.sock my-openhands-runtime:latest python -m openhands_mcp.server --transport streamable-http --host 0.0.0.0 --port %MCP_PORT%
+) else (
+    docker run -d --name mcp-skills -p 127.0.0.1:%MCP_PORT%:%MCP_PORT% -e LPAI_PRIVATE=1 -e LPAI_ALLOW_HOSTS=host.docker.internal -e MCP_TOKEN=%MCP_TOKEN% -e OPENAI_API_KEY=%LLAMA_API_KEY% -e DO_NOT_TRACK=1 -e PYTHONPATH=/workspace -v %PROJECT%:/workspace -v "%PROJECT%\.env.example":/workspace/.env:ro -v //var/run/docker.sock:/var/run/docker.sock my-openhands-runtime:latest python -m openhands_mcp.server --transport streamable-http --host 0.0.0.0 --port %MCP_PORT%
+)
 
 :: === POINT OPENHANDS v1 AT THE LOADED MODEL + THE SKILLS SIDECAR ===
 :: v1 stores settings under agent_settings and only accepts *_diff payloads, so
@@ -256,7 +271,7 @@ docker run -d --name mcp-skills -p 127.0.0.1:%MCP_PORT%:%MCP_PORT% --env-file .e
 :: every boot, which is exactly what makes switching market <-> coding work.
 if /i not "%MOSKY_OH%"=="v0" (
     echo [4b/5] Pointing OpenHands v1 at %OH_ALIAS% + MOSKY skills...
-    "%VENV%\Scripts\python.exe" "%PROJECT%\configure-openhands-v1.py" %OH_ALIAS% --port %OPENHANDS_PORT% --mcp-port %MCP_PORT%
+    "%VENV%\Scripts\python.exe" "%PROJECT%\configure-openhands-v1.py" %OH_ALIAS% --port %OPENHANDS_PORT% --mcp-port %MCP_PORT% --mcp-token "%MCP_TOKEN%" --api-key "%LLAMA_API_KEY%"
     if errorlevel 1 echo [WARNING] Could not configure OpenHands v1 automatically - set the model in the UI under Settings ^> LLM.
 )
 

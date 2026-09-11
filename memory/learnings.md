@@ -1,2 +1,0 @@
-# Self-Improvement Persistent Memory
-

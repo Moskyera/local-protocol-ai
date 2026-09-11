@@ -81,7 +81,12 @@ param(
     # The middle ground. Keep only the first N layers' experts on the CPU and
     # put the rest on the GPU, trading VRAM back for generation speed. Takes
     # precedence over -CpuMoe when set. 0 = not used.
-    [int]$NCpuMoe = 0
+    [int]$NCpuMoe = 0,
+
+    # Require this key on every request (llama-server --api-key). Set by
+    # start-ai.bat, whose 0.0.0.0 bind is reachable from the LAN. Empty =
+    # no key, which is fine on a loopback bind.
+    [string]$ApiKey = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -347,6 +352,7 @@ $args += $loadFlag
 if ($NCpuMoe -gt 0) { $args += @("--n-cpu-moe", $NCpuMoe) }
 elseif ($CpuMoe)    { $args += "--cpu-moe" }
 
+if ($ApiKey) { $args += @("--api-key", $ApiKey) }
 $proc = Start-Process -FilePath $SERVER_EXE -ArgumentList $args -WindowStyle Hidden -RedirectStandardOutput $logOut -RedirectStandardError $logErr -PassThru
 Write-Host "llama-server (coder) started (PID $($proc.Id)). Logs: $logOut / $logErr" -ForegroundColor Green
 

@@ -92,8 +92,9 @@ def get_llm_client(base_url: Optional[str] = None) -> OpenAI:
     Routing MUST be by URL, not by model name: llama-server answers with
     whatever GGUF it has loaded and ignores the `model` field entirely.
     """
-    base_url = base_url or getattr(config, "OPENAI_BASE_URL",
-                                   "http://127.0.0.1:8080/v1")
+    import lpai_private
+    base_url = lpai_private.require_local_endpoint(base_url or getattr(config, "OPENAI_BASE_URL",
+                                   "http://127.0.0.1:8080/v1"))
     api_key = getattr(config, "OPENAI_API_KEY", "sk-dummy-local")
     # Bound the call. The openai SDK default read timeout is 600s, so a hung or
     # mid-swap llama-server would stall each briefing section for 10 minutes

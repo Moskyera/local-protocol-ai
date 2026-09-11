@@ -67,7 +67,7 @@ from openhands_skills.openhands_v2_entry import run_task
 # Example for wallet / chain analysis
 result = run_task(
     "full_wallet_profile", 
-    address="0x38be95f628ed004a000ddf8724142a95e3c4b492",
+    address="0x000000000000000000000000000000000000dEaD",
     chain="pulsechain"
 )
 print(result)  # rich dict with native transfers, balances, risk_score (USD-based), pnl_estimate etc.

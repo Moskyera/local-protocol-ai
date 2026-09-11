@@ -30,6 +30,12 @@ def to_ascii(text: str) -> str:
 
 
 def main(argv=None) -> int:
+    import lpai_private
+    lpai_private.apply_env()
+    from .updater import update_check_enabled
+    if not update_check_enabled():
+        print("update check off (private mode)")
+        return 0
     argv = list(sys.argv[1:] if argv is None else argv)
     repo = argv[0] if argv else updater.default_repo()
 
