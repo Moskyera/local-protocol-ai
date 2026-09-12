@@ -169,6 +169,8 @@ class FakeBrain:
     def turn(self, messages, schemas, lang_hint=None, facts=""):
         self.calls.append([m for m in messages])
         item = self.script.pop(0)
+        if isinstance(item, brain.Reply):
+            return item
         if isinstance(item, str):
             return brain.Reply(text=item)
         return brain.Reply(tool_calls=[brain.ToolCall(f"id{i}", n, a) for i, (n, a) in enumerate(item)])
@@ -319,6 +321,10 @@ class TestGlitchesFoundAgainstTheRealModel:
 
     def test_the_prompt_forbids_years_in_words(self):
         assert "ΨΗΦΙΑ" in brain.SYSTEM_PROMPT and "ολογράφως" in brain.SYSTEM_PROMPT
+        # MEASURED 2026-09-12: asked to say 12 in words the model wrote "zwölf"
+        # 4/10 times under every sampling setting; so no number is ever written
+        # in words by the model - greek.py says them
+        assert "ΟΛΟΥΣ τους αριθμούς" in brain.SYSTEM_PROMPT and "12:08" in brain.SYSTEM_PROMPT
 
     def test_after_a_denial_the_model_is_told_not_to_reask(self, monkeypatch, tmp_path):
         ag, spoken, ran, fake = make_agent(monkeypatch,
@@ -933,6 +939,8 @@ class TestTheVoiceSpeaksLikeAGreek:
         ("Κοστίζει 1.250 ευρώ.", "Κοστίζει χίλια διακόσια πενήντα ευρώ."),
         ("1.287,50 ευρώ", "χίλια διακόσια ογδόντα επτά ευρώ και πενήντα λεπτά"),
         ("Η ώρα είναι 11:25.", "Η ώρα είναι έντεκα και είκοσι πέντε."),
+        ("Η εντολή έβγαλε 12:09:02.", "Η εντολή έβγαλε δώδεκα και εννέα."),
+        ("Βρήκα 12 αρχεία.", "Βρήκα δώδεκα αρχεία."),
         ("Είναι 9:30 και μετά 10:00.", "Είναι εννέα και μισή και μετά δέκα ακριβώς."),
         ("το 2026", "το 2026"),
         ("Ο Docker δεν τρέχει.", "Ο ντόκερ δεν τρέχει."),
@@ -1149,3 +1157,32 @@ class TestPrivateModeAndKnowledge:
         out = T._get_system_status({})
         assert "model server:" in out and "MCP tool server:" in out and "private mode:" in out
         assert "VRAM" not in out
+
+
+class TestGlitchesFoundInTheFullRun:
+    """2026-09-12, ten scenarios against the real model and tool server."""
+
+    def test_a_word_mixing_latin_and_greek_letters_is_dropped(self):
+        assert brain.strip_for_speech("Αυτό mengakτεύει τη μείωση.") == "Αυτό τη μείωση."
+        assert brain.strip_for_speech("Το PowerShell και το αρχείο.") == "Το PowerShell και το αρχείο."
+
+    def test_a_lone_word_before_a_tool_call_is_not_spoken(self, monkeypatch, tmp_path):
+        ag, spoken, ran, fake = make_agent(monkeypatch,
+            script=[brain.Reply(text="been", tool_calls=[brain.ToolCall("c1", "current_time", {})]), "Είναι δέκα."],
+            answers=[], tmp_path=tmp_path)
+        ag.handle("τι ώρα είναι")
+        assert "been" not in spoken and spoken[-1] == "Είναι δέκα."
+
+    def test_an_empty_reply_after_a_tool_is_retried_then_the_result_is_read(self, monkeypatch, tmp_path):
+        ag, spoken, ran, fake = make_agent(monkeypatch,
+            script=[[("current_time", {})], "", ""], answers=[], tmp_path=tmp_path)
+        out = ag.handle("τι ώρα είναι")
+        assert len(fake.calls) == 3, "one retry with a nudge"
+        assert fake.calls[2][-1]["role"] == "user" and "Απάντησέ" in fake.calls[2][-1]["content"]
+        assert out.startswith("Το εργαλείο επέστρεψε:") and "2026" in out or out.startswith("Το εργαλείο επέστρεψε:")
+        assert ag.history[-2]["role"] == "tool", "the nudge is not kept in history"
+
+    def test_the_retry_answer_is_used_when_it_comes(self, monkeypatch, tmp_path):
+        ag, spoken, ran, fake = make_agent(monkeypatch,
+            script=[[("current_time", {})], "", "Είναι δέκα."], answers=[], tmp_path=tmp_path)
+        assert ag.handle("τι ώρα είναι") == "Είναι δέκα."

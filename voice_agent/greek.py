@@ -179,7 +179,7 @@ _MONEY_RE = re.compile(
     r"(?P<pre>[€$£]\s?)?(?P<whole>\d{1,3}(?:\.\d{3})+|\d+)(?:,(?P<frac>\d{1,2}))?(?:\s?(?P<unit>ευρώ|δολάρια|δολ\.|λίρες|€|\$|£))?")
 # seven or more digits in a row is a phone number, an id, a card: digit by digit
 _LONG_DIGITS_RE = re.compile(r"(?<![\d.,])(\d{7,}|\d{3,4}[ -]\d{6,7})(?![\d.,])")
-_TIME_RE = re.compile(r"\b(?P<h>[01]?\d|2[0-3]):(?P<m>[0-5]\d)\b")
+_TIME_RE = re.compile(r"\b(?P<h>[01]?\d|2[0-3]):(?P<m>[0-5]\d)(?::[0-5]\d)?\b")   # seconds are dropped: nobody says them
 _PERCENT_RE = re.compile(r"(?P<whole>\d+)(?:,(?P<frac>\d+))?\s?%")
 _NUMBER_RE = re.compile(r"(?<![\d,.])(?P<num>\d{1,3}(?:\.\d{3})+|\d+)(?:,(?P<frac>\d+))?(?![\d.]\d)(?=\s*(?P<next>[^\W\d_]+)?)")
 

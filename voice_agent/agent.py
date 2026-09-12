@@ -40,6 +40,7 @@ class TurnLog:
     spoken: list[str] = field(default_factory=list)
     seconds: dict = field(default_factory=dict)
     final: str = ""
+    raw: list[str] = field(default_factory=list)     # what the model literally returned, per call
 
 
 class Agent:
@@ -216,7 +217,17 @@ class Agent:
                 self.say(brain.LLMError("jinja").spoken(self.lang), self.lang)
 
             if not reply.tool_calls:
-                final = brain.strip_for_speech(reply.text) or self._empty_reply()
+                final = brain.strip_for_speech(reply.text)
+                if not final and _round > 0:
+                    # MEASURED 2026-09-12: after read_notes the model returned an
+                    # empty message once in a long conversation. Ask once more
+                    # with a nudge; failing that, read the last result out.
+                    self.log("  (empty reply after tools - retrying once)")
+                    reply = self._model_turn(schemas, nudge=True)
+                    final = brain.strip_for_speech(reply.text) if not reply.tool_calls else ""
+                    if not final:
+                        final = self._last_result_spoken()
+                final = final or self._empty_reply()
                 self.history.append({"role": "assistant", "content": final})
                 self.say(final)
                 return final
@@ -226,8 +237,9 @@ class Agent:
                                  "tool_calls": [{"id": c.id, "type": "function",
                                                  "function": {"name": c.name, "arguments": json.dumps(c.arguments, ensure_ascii=False)}}
                                                 for c in reply.tool_calls]})
-            if reply.text:
-                self.say(brain.strip_for_speech(reply.text))
+            pre = brain.strip_for_speech(reply.text) if reply.text else ""
+            if len(pre.split()) >= 3:      # MEASURED: a lone "been" before a tool call
+                self.say(pre)
 
             for call in reply.tool_calls:
                 result = clamp_result(self._run_gated(call))
@@ -238,17 +250,36 @@ class Agent:
                  if self.lang == "el" else "I stopped: the model kept asking for tools without concluding.")
         self.say(final); return final
 
-    def _model_turn(self, schemas):
+    def _model_turn(self, schemas, nudge: bool = False):
         """One call to the model, with a spoken notice if it takes long:
-        with --parallel 1 a request queued behind another client is silent."""
+        with --parallel 1 a request queued behind another client is silent.
+        `nudge`: append a one-line request for an answer (not kept)."""
         notice = threading.Timer(config.LLM_SLOW_NOTICE_S, lambda: self._say_safely(
             "Περιμένω ακόμα το μοντέλο." if self.lang == "el" else "Still waiting for the model."))
         notice.daemon = True
         notice.start()
+        msgs = self.history[-24:]
+        if nudge:
+            msgs = msgs + [{"role": "user", "content": ("Απάντησέ μου τώρα με μία ή δύο προτάσεις με βάση το αποτέλεσμα."
+                                                        if self.lang == "el" else
+                                                        "Answer me now in one or two sentences based on the result.")}]
         try:
-            return brain.turn(self.history[-24:], schemas, self.lang, facts=self.facts())
+            reply = brain.turn(msgs, schemas, self.lang, facts=self.facts())
+            self.last.raw.append((reply.raw_message.get("content") or "")[:200])
+            return reply
         finally:
             notice.cancel()
+
+    def _last_result_spoken(self) -> str:
+        """The last tool result, said plainly, when the model would not."""
+        for m in reversed(self.history):
+            if m.get("role") == "tool":
+                body = (m.get("content") or "").split("\n", 1)[-1].strip()
+                if body and not body.startswith("("):
+                    head = " ".join(body.split())[:300]
+                    return ("Το εργαλείο επέστρεψε: " if self.lang == "el" else "The tool returned: ") + head
+                break
+        return ""
 
     def facts(self) -> str:
         """The self-knowledge block, rebuilt once a day or when the tool set
@@ -274,7 +305,7 @@ class Agent:
                 "seconds": self.last.seconds,
                 "tools": [{k: v for k, v in e.items() if not (k == "result_head" and e.get("tool") == "read_clipboard")}
                           for e in self.last.tool_events],
-                "spoken": self.last.spoken, "final": self.last.final, "error": error,
+                "spoken": self.last.spoken, "final": self.last.final, "raw": self.last.raw, "error": error,
             }
             config.LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
             with config.LOG_FILE.open("a", encoding="utf-8") as fh:

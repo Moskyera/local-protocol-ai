@@ -63,10 +63,11 @@ LLM_SLOW_NOTICE_S = 12
 # MEASURED speed, int8, 16 threads, beam_size=1: 5.5 s clip in 3.1 s (0.57x
 # real time); model load 2 s once cached. small was 0.20x but mangled Greek
 # ("εντολίδα"); medium 0.52x. turbo is the accuracy/speed point.
-# MEASURED 2026-09-11: the library encodes every clip twice; stt.py encodes
-# once and reuses it, 0.49-0.54x of the above with identical text. Whisper
-# always encodes a 30 s window, so a 1.4 s "ναι, συνέχισε" costs the same
-# as a 25 s sentence: the fixed cost per utterance is the encoder.
+# MEASURED 2026-09-12 (machine at 33% background load): the library's
+# transcribe() encodes every clip twice, 6.0-6.3 s per utterance; stt.py
+# encodes once and reuses it, 3.1-3.2 s, identical text, on 1.2 s and 4.6 s
+# clips alike. Whisper always encodes a 30 s window, so a short "ναι,
+# συνέχισε" costs the same as a long sentence: the encoder IS the cost.
 # NOT on the GPU: ctranslate2 has no CUDA here and whisper.cpp ships no
 # Windows Vulkan binary; a source build needs MSVC + Vulkan SDK, which are not
 # installed. CPU is the honest path today.
