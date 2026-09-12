@@ -408,7 +408,8 @@ def discover_mcp_tools(for_voice: bool = True) -> tuple[list[Tool], Optional[str
         return [], f"{type(e).__name__}: {str(e)[:120]}"
     tools = []
     for t in raw:
-        params = t.inputSchema or {"type": "object", "properties": {}}
+        # MCP SDK v2 (fastmcp 4) renamed inputSchema -> input_schema; read either
+        params = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None) or {"type": "object", "properties": {}}
         desc = (t.description or "").strip().split("\n")[0][:220]
         risk = classify(t.name)
         confirm_flag = "user_confirmed" in (params.get("properties") or {})
